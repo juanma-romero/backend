@@ -57,7 +57,7 @@ app.post('/api/messages', async (req, res) => {
 
   // --- NUEVO: Lógica para detectar el comando y llamar a la IA ---
   const messageContent = messageData.content || '';
-  if (messageContent.trim().toLowerCase() === '/listado') {
+  if (messageContent === '/listado') {
     console.log(`[Backend] Comando '/listado' detectado del cliente ${messageData.key.remoteJid}.`);
     
     // Hacemos la consulta a nuestro servicio de IA
