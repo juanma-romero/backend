@@ -1,3 +1,9 @@
+// services/mongo.service.js
+let collection;
+
+export const setCollection = (dbCollection) => {
+    collection = dbCollection;
+};
 // Esta función es la única que sabe cómo guardar un mensaje.
 export const saveMessage = async (messageData) => {
     if (!collection) {
