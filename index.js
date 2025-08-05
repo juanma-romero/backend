@@ -135,7 +135,7 @@ app.post('/api/whatsapp-inbound', async (req, res) => { // NUEVO: Convertido a a
   // --- NUEVO: Lógica para detectar el comando y llamar a la IA ---
   // Asumimos que el mensaje está en req.body.message
   const messageContent = req.body.message || '';
-  if (messageContent.trim().toLowerCase() === '/listado') {
+  if (messageContent === '/listado') {
     console.log(`[Backend] Comando '/listado' detectado de TI (admin).`);
     
     // Hacemos la consulta a nuestro servicio de IA
