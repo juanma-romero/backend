@@ -9,9 +9,18 @@ const server = http.createServer(app);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// NUEVO: Obtenemos la URL del servicio de IA desde las variables de entorno
-// El fallback es para desarrollo local si no usas Docker.
-const IA_SERVICE_URL = process.env.IA_SERVICE_URL || 'http://localhost:8000';
+// Obtenemos la URL del servicio de IA desde las variables de entorno
+const IA_SERVICE_URL = process.env.IA_SERVICE_URL;
+
+if (!IA_SERVICE_URL) {
+  console.error("-------------------------------------------------------------------------");
+  console.error("ERROR FATAL: La variable de entorno IA_SERVICE_URL no está definida.");
+  console.error("Asegúrate de que tu docker-compose.yml tiene la sección 'environment'");
+  console.error("para el servicio 'backend' con '- IA_SERVICE_URL=http://ia_service:8000'");
+  console.error("-------------------------------------------------------------------------");
+  process.exit(1); // Detiene la aplicación para prevenir errores de conexión.
+}
+
 
 let collection;
 
