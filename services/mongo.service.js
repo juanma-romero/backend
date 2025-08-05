@@ -28,8 +28,7 @@ export const saveMessage = async (messageData) => {
             mediaUrl: messageData.mediaUrl || null,
             contactInfo: messageData.contactInfo || null,
             quotedMessage: messageData.quotedMessage || null,
-            // Aseguramos que el timestamp sea un objeto Date válido
-            timestamp: messageData.messageTimestamp ? new Date(parseInt(messageData.messageTimestamp, 10) * 1000) : new Date()
+            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp) : new Date()
         };
 
         // Lógica para determinar el estado de la conversación
