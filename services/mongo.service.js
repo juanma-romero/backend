@@ -27,7 +27,7 @@ export const saveMessage = async (messageData) => {
             role: messageData.key.fromMe ? 'assistant' : 'user', // 'assistant' es el admin, 'user' es el cliente
             type: messageData.type || 'text',
             content: messageData.content || messageData.caption || null,
-            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp * 1000) : new Date()
+            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp ) : new Date()
         };
 
         const updateOperation = {
