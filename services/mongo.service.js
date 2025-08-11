@@ -4,7 +4,11 @@ let collection;
 export const setCollection = (dbCollection) => {
     collection = dbCollection;
 };
-// Esta función es la única que sabe cómo guardar un mensaje.
+
+/**
+ * Guarda un mensaje en la conversación correcta.
+ * La lógica de estado ha sido removida de aquí, será manejada por el servicio de análisis.
+ */
 export const saveMessage = async (messageData) => {
     if (!collection) {
         console.error("[mongo.service] La colección no está inicializada.");
@@ -18,42 +22,27 @@ export const saveMessage = async (messageData) => {
     try {
         const remoteJid = messageData.key.remoteJid;
 
-        // Lógica de formato de mensaje
         const formattedMessage = {
             id: messageData.key.id,
-            role: messageData.key.fromMe ? 'assistant' : 'user',
-            type: messageData.type,
-            content: messageData.content || null,
-            caption: messageData.caption || null,
-            mediaUrl: messageData.mediaUrl || null,
-            contactInfo: messageData.contactInfo || null,
-            quotedMessage: messageData.quotedMessage || null,
-            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp) : new Date()
+            role: messageData.key.fromMe ? 'assistant' : 'user', // 'assistant' es el admin, 'user' es el cliente
+            type: messageData.type || 'text',
+            content: messageData.content || messageData.caption || null,
+            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp * 1000) : new Date()
         };
 
-        // Lógica para determinar el estado de la conversación
-        const currentChat = await collection.findOne({ contactJid: remoteJid });
-        let updatedStateConversation = 'No leido';
-        if (currentChat && currentChat.stateConversation === 'Resuelto') {
-            updatedStateConversation = 'No leido';
-        } else if (currentChat) {
-            updatedStateConversation = currentChat.stateConversation;
-        }
-
-        // Lógica de actualización de la base de datos
         const updateOperation = {
             $push: { messages: formattedMessage },
-            $set: {
-                stateConversation: updatedStateConversation,
-                updatedAt: new Date()
-            },
+            $set: { updatedAt: new Date() },
             $setOnInsert: {
                 contactJid: remoteJid,
+                stateConversation: 'Sin Contestar', // Estado inicial por defecto para un chat nuevo
+                contextualSummary: 'Nuevo chat esperando primera respuesta.', // Resumen inicial
                 createdAt: new Date()
             }
         };
 
-        if (!messageData.key.fromMe && messageData.pushName) {
+        // Actualiza el nombre del contacto si viene en el mensaje
+        if (messageData.pushName) {
             updateOperation.$set.contactName = messageData.pushName;
         }
 
@@ -66,4 +55,49 @@ export const saveMessage = async (messageData) => {
     } catch (err) {
         console.error('[mongo.service] Error al guardar el mensaje:', err);
     }
-}
+};
+
+/**
+ * Obtiene los últimos N mensajes de una conversación.
+ * @param {string} contactJid - El JID del contacto.
+ * @param {number} limit - El número de mensajes a obtener.
+ * @returns {Promise<Array>} - Una promesa que resuelve a un array de mensajes.
+ */
+export const getRecentMessages = async (contactJid, limit = 10) => {
+    if (!collection) return [];
+    try {
+        const chat = await collection.findOne(
+            { contactJid: contactJid },
+            { projection: { messages: { $slice: -limit } } }
+        );
+        return chat ? chat.messages : [];
+    } catch (err) {
+        console.error('[mongo.service] Error al obtener mensajes recientes:', err);
+        return [];
+    }
+};
+
+/**
+ * Actualiza un chat con el estado y resumen provistos por la IA.
+ * @param {string} contactJid - El JID del contacto.
+ * @param {string} state - El nuevo estado de la conversación.
+ * @param {string} summary - El nuevo resumen contextual.
+ */
+export const updateChatAnalysis = async (contactJid, state, summary) => {
+    if (!collection) return;
+    try {
+        await collection.updateOne(
+            { contactJid: contactJid },
+            { 
+                $set: { 
+                    stateConversation: state,
+                    contextualSummary: summary, // Este es el nuevo campo para el resumen
+                    updatedAt: new Date() 
+                } 
+            }
+        );
+        console.log(`[mongo.service] Análisis guardado para ${contactJid}. Estado: ${state}`);
+    } catch (err) {
+        console.error('[mongo.service] Error al guardar el análisis del chat:', err);
+    }
+};
