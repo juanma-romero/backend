@@ -18,7 +18,7 @@ export const saveMessage = async (messageData) => {
     try {
         const remoteJid = messageData.key.remoteJid;
 
-        // Lógica de formato de mensaje (extraída del index.js original)
+        // Lógica de formato de mensaje
         const formattedMessage = {
             id: messageData.key.id,
             role: messageData.key.fromMe ? 'assistant' : 'user',
