@@ -1,58 +1,56 @@
 // routes/messages.routes.js
 import { Router } from 'express';
-import { queryIAService } from '../services/ia.service.js';
 import { saveMessage } from '../services/mongo.service.js';
+import { triggerConversationAnalysis } from '../services/analysis.service.js';
 
 const router = Router();
 
-// --- Lógica para el endpoint de clientes ---
+// Usamos un Map para manejar los temporizadores de análisis pendientes por cada chat.
+const pendingAnalysisTimers = new Map();
+
+// Endpoint que recibe los mensajes de los clientes.
 router.post('/messages', async (req, res) => {
-  // Se define 'messageData' para este scope
   const messageData = req.body.message;
-  
+
   if (!messageData) {
-    console.warn("[Router /messages] Se recibió una petición sin cuerpo de mensaje.");
+    console.warn("[Router /messages] Petición recibida sin cuerpo de mensaje.");
     return res.status(400).send('Cuerpo del mensaje requerido.');
   }
 
-  // 1. Guardar el mensaje (delegamos a mongo.service)
+  // 1. Guardar el mensaje en la DB inmediatamente.
   await saveMessage(messageData);
 
-  // 2. Lógica de negocio (detectar comandos)
-  const messageContent = messageData.content || '';
-  if (messageContent === '/listado') {
-    console.log(`[Router /messages] Comando '/listado' detectado.`);
-    // 3. Llamar a la IA (delegamos a ia.service)
-    const iaResponse = await queryIAService('¿Cuántos días tiene un año bisiesto?');
-    console.log('[Router /messages] Respuesta de la IA:', iaResponse?.answer);
+  // 2. Si el mensaje es del cliente (no nuestro), activamos la lógica de análisis.
+  if (messageData.key && !messageData.key.fromMe) {
+    const contactJid = messageData.key.remoteJid;
+    const ANALYSIS_DELAY = 45000; // 45 segundos, como definiste.
+
+    // Si ya hay un análisis programado, lo cancelamos para reiniciar la cuenta.
+    if (pendingAnalysisTimers.has(contactJid)) {
+      clearTimeout(pendingAnalysisTimers.get(contactJid));
+    }
+
+    // Programamos el nuevo análisis para dentro de 45 segundos.
+    const timerId = setTimeout(() => {
+      console.log(`[Router] Tiempo de calma finalizado para ${contactJid}. Disparando análisis.`);
+      triggerConversationAnalysis(contactJid);
+      pendingAnalysisTimers.delete(contactJid); // Limpiamos el mapa
+    }, ANALYSIS_DELAY);
+
+    // Guardamos la referencia al nuevo temporizador.
+    pendingAnalysisTimers.set(contactJid, timerId);
   }
 
+  // 3. Respondemos 200 OK inmediatamente al webhook. No esperamos el análisis.
   res.sendStatus(200);
 });
 
-
-// --- Lógica para el endpoint de administradores ---
-// El error ocurría aquí porque esta parte no estaba completa en el plan anterior.
+// Puedes dejar este endpoint de admin por si lo necesitas en el futuro,
+// pero la lógica principal de análisis ya no está aquí.
 router.post('/whatsapp-inbound', async (req, res) => {
-    // Se define 'adminMessageData' para este scope, no 'messageData'
-    const adminMessageData = req.body;
-  
-    if (!adminMessageData?.message?.text?.body) {
-      console.warn("[Router /whatsapp-inbound] Se recibió una petición sin el formato esperado.");
-      return res.status(400).send('Formato de mensaje de admin incorrecto.');
-    }
-    
-    // 2. Lógica de negocio (detectar comandos)
-    const messageContent = adminMessageData.message.text.body || '';
-    if (messageContent === '/listado') {
-      console.log(`[Router /whatsapp-inbound] Comando '/listado' detectado.`);
-      // 3. Llamar a la IA (delegamos a ia.service)
-      const iaResponse = await queryIAService('¿Cuántos días tiene un año bisiesto?');
-      console.log('[Router /whatsapp-inbound] Respuesta de la IA:', iaResponse?.answer);
-    }
-
+    console.log("[Router /whatsapp-inbound] Endpoint de admin recibido.");
+    // Aquí podrías añadir lógica específica para comandos de admin si es necesario.
     res.sendStatus(200);
-})
+});
 
-
-export default router
+export default router;
