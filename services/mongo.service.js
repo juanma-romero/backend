@@ -1,10 +1,15 @@
 // services/mongo.service.js
 let collection;
+let dbClient;
 
 export const setCollection = (dbCollection) => {
     collection = dbCollection;
 };
 
+export const setDbClient = (client) => {
+    dbClient = client;
+};
+ 
 /**
  * Guarda un mensaje en la conversación correcta.
  * La lógica de estado ha sido removida de aquí, será manejada por el servicio de análisis.
@@ -100,4 +105,24 @@ export const updateChatAnalysis = async (contactJid, state, summary) => {
     } catch (err) {
         console.error('[mongo.service] Error al guardar el análisis del chat:', err);
     }
+};
+
+/**
+ * Guarda un documento de pedido en la colección 'pedidos'.
+ * @param {Object} orderDocument - El documento del pedido a guardar.
+ * @returns {Promise<Object>} - El documento guardado.
+ */
+export const saveOrderToDb = async (orderDocument) => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible.");
+    return null;
+  }
+  try {
+    const pedidosCollection = dbClient.db().collection('pedidos');
+    const result = await pedidosCollection.insertOne(orderDocument);
+    return { _id: result.insertedId, ...orderDocument };
+  } catch (error) {
+    console.error('[mongo.service] Error al guardar el pedido:', error);
+    throw error;
+  }
 };

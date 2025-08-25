@@ -1,6 +1,7 @@
 import { getRecentMessages, updateChatAnalysis } from './mongo.service.js';
-import { queryIAService } from './ia.service.js';
-
+import { queryIAService } from './ia.service.js'
+import { createOrder } from './order.service.js'
+ 
 /**
  * Formatea los mensajes de la DB a un string simple para el prompt de la IA.
  * @param {Array} messages - Array de objetos de mensaje.
@@ -20,25 +21,27 @@ const formatMessagesForPrompt = (messages) => {
  * @param {string} contactJid - El JID del contacto a analizar.
  */
 export const triggerConversationAnalysis = async (contactJid) => {
-    console.log(`[Analysis] Iniciando análisis para ${contactJid}...`);
+  try {
+    // Corregido: Llamar a getRecentMessages y ajustar el formato del prompt.
+    const conversationHistory = await getRecentMessages(contactJid, 15); // Obtenemos los últimos 15 mensajes.
+    const formattedPrompt = formatMessagesForPrompt(conversationHistory);
 
-    // 1. Obtener los últimos 10 mensajes (como definiste).
-    const recentMessages = await getRecentMessages(contactJid, 10);
-    if (recentMessages.length === 0) {
-        console.log(`[Analysis] No se encontraron mensajes para ${contactJid}. Abortando.`);
-        return;
-    }
+    const analysisResult = await queryIAService('/analyze-conversation', formattedPrompt);
 
-    // 2. Formatear los mensajes para que la IA los entienda.
-    const formattedPrompt = formatMessagesForPrompt(recentMessages);
-
-    // 3. Llamar al servicio de IA con el prompt formateado.
-    const analysisResult = await queryIAService(formattedPrompt);
-
-    // 4. Si la IA respondió correctamente, actualizar la base de datos.
-    if (analysisResult && analysisResult.state && analysisResult.summary) {
+    if (analysisResult && analysisResult.pedido_detectado) {
+      const newOrder = {
+        remoteJid: contactJid,
+        ...analysisResult 
+      };
+      await createOrder(newOrder);
+    } else if (analysisResult && analysisResult.state) {
+        // Guardamos el resultado del análisis en la base de datos.
         await updateChatAnalysis(contactJid, analysisResult.state, analysisResult.summary);
+        console.log(`[analysis.service] Análisis de estado para ${contactJid}: Estado: ${analysisResult.state}, Resumen: ${analysisResult.summary}`);
     } else {
-        console.error(`[Analysis] El análisis falló o retornó un formato inesperado para ${contactJid}.`, analysisResult);
+      console.warn("[analysis.service] No se pudo analizar la conversación o no se detectó un pedido.");
     }
+  } catch (error) {
+    console.error('[analysis.service] Error en el análisis de conversación:', error);
+  }
 };
