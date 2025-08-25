@@ -26,14 +26,19 @@ router.post('/messages', async (req, res) => {
 
 // --- Lógica para el endpoint de administradores ---
 router.post('/whatsapp-inbound', async (req, res) => {
+    // 1. Log para depuración
+    console.log('[Router /whatsapp-inbound] Cuerpo de la petición recibido:', JSON.stringify(req.body, null, 2));
+
     const adminMessageData = req.body;
   
-    if (!adminMessageData?.message?.text?.body) {
-      console.warn("[Router /whatsapp-inbound] Se recibió una petición sin el formato esperado.");
+    // 2. Validación corregida
+    if (!adminMessageData?.message) {
+      console.warn("[Router /whatsapp-inbound] Se recibió una petición sin el campo 'message'.");
       return res.status(400).send('Formato de mensaje de admin incorrecto.');
     }
     
-    const messageContent = adminMessageData.message.text.body || '';
+    // 3. Extracción del mensaje corregida
+    const messageContent = adminMessageData.message || '';
     let replyMessage = null;
 
     if (messageContent.startsWith('/')) {
