@@ -1,5 +1,3 @@
-// services/order.service.js
-
 import { saveOrderToDb, getRecentMessages } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
 

@@ -126,3 +126,22 @@ export const saveOrderToDb = async (orderDocument) => {
     throw error;
   }
 };
+
+/**
+ * Obtiene todos los pedidos de la colección 'pedidos'.
+ * @returns {Promise<Array>} - Un array con todos los pedidos.
+ */
+export const getAllOrders = async () => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible.");
+    return [];
+  }
+  try {
+    const pedidosCollection = dbClient.db().collection('pedidos');
+    const orders = await pedidosCollection.find({}).toArray();
+    return orders;
+  } catch (error) {
+    console.error('[mongo.service] Error al obtener los pedidos:', error);
+    return [];
+  }
+};
