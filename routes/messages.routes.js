@@ -26,7 +26,6 @@ router.post('/messages', async (req, res) => {
 
 // --- Lógica para el endpoint de administradores ---
 router.post('/whatsapp-inbound', async (req, res) => {
-    // Se define 'adminMessageData' para este scope, no 'messageData'
     const adminMessageData = req.body;
   
     if (!adminMessageData?.message?.text?.body) {
@@ -34,13 +33,21 @@ router.post('/whatsapp-inbound', async (req, res) => {
       return res.status(400).send('Formato de mensaje de admin incorrecto.');
     }
     
-    // 2. Lógica de negocio (delegada al command handler)
     const messageContent = adminMessageData.message.text.body || '';
-    if (messageContent.startsWith('/')) { // Asumimos que todos los comandos empiezan con /
-      await handleAdminCommand(messageContent);
+    let replyMessage = null;
+
+    if (messageContent.startsWith('/')) {
+      replyMessage = await handleAdminCommand(messageContent);
     }
 
-    res.sendStatus(200);
+    // Si el manejador de comandos devolvió un mensaje, lo enviamos como respuesta.
+    if (replyMessage) {
+      console.log(`[Router /whatsapp-inbound] Enviando respuesta: "${replyMessage.substring(0, 50)}..."`);
+      res.json({ reply: replyMessage });
+    } else {
+      // Si no hay mensaje de respuesta (ej. no era un comando), solo confirmamos la recepción.
+      res.sendStatus(200);
+    }
 })
 
 export default router;

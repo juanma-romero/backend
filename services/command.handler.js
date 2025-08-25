@@ -12,6 +12,7 @@ const commands = {
 /**
  * Procesa el mensaje de un administrador para identificar y ejecutar un comando.
  * @param {string} messageContent - El contenido del mensaje de texto.
+ * @returns {Promise<string|null>} - El string de respuesta del comando o null si no hay respuesta.
  */
 export const handleAdminCommand = async (messageContent) => {
   // Extraemos la primera palabra para identificar el comando.
@@ -21,11 +22,9 @@ export const handleAdminCommand = async (messageContent) => {
 
   if (command && typeof command.execute === 'function') {
     console.log(`[CommandHandler] Comando "${commandName}" reconocido. Ejecutando...`);
-    // Por ahora, no pasamos argumentos, pero la estructura lo permite.
-    // Ejemplo: await command.execute(args);
-    await command.execute();
+    return await command.execute();
   } else {
     console.log(`[CommandHandler] Comando "${commandName}" no reconocido o no es ejecutable.`);
-    // Opcional: enviar una respuesta de "comando no encontrado" al admin.
+    return "El comando no fue reconocido. Intenta con /listado.";
   }
 };
