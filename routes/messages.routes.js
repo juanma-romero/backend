@@ -26,31 +26,34 @@ router.post('/messages', async (req, res) => {
 
 // --- Lógica para el endpoint de administradores ---
 router.post('/whatsapp-inbound', async (req, res) => {
-    // 1. Log para depuración
     console.log('[Router /whatsapp-inbound] Cuerpo de la petición recibido:', JSON.stringify(req.body, null, 2));
-
     const adminMessageData = req.body;
-  
-    // 2. Validación corregida
-    if (!adminMessageData?.message) {
-      console.warn("[Router /whatsapp-inbound] Se recibió una petición sin el campo 'message'.");
-      return res.status(400).send('Formato de mensaje de admin incorrecto.');
+
+    let messageContent = '';
+
+    // Lógica para manejar ambos formatos de payload
+    if (typeof adminMessageData.message === 'string') {
+        // Formato de WABI en producción: { "message": "/listado" }
+        messageContent = adminMessageData.message;
+    } else if (typeof adminMessageData.message?.text?.body === 'string') {
+        // Formato del simulador local: { "message": { "text": { "body": "/listado" } } }
+        messageContent = adminMessageData.message.text.body;
+    }
+
+    if (!messageContent) {
+        console.warn("[Router /whatsapp-inbound] No se pudo extraer el contenido del mensaje.");
+        return res.status(400).send('Formato de mensaje de admin incorrecto.');
     }
     
-    // 3. Extracción del mensaje corregida
-    const messageContent = adminMessageData.message || '';
     let replyMessage = null;
-
     if (messageContent.startsWith('/')) {
       replyMessage = await handleAdminCommand(messageContent);
     }
 
-    // Si el manejador de comandos devolvió un mensaje, lo enviamos como respuesta.
     if (replyMessage) {
       console.log(`[Router /whatsapp-inbound] Enviando respuesta: "${replyMessage.substring(0, 50)}..."`);
       res.json({ reply: replyMessage });
     } else {
-      // Si no hay mensaje de respuesta (ej. no era un comando), solo confirmamos la recepción.
       res.sendStatus(200);
     }
 })

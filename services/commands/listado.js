@@ -14,7 +14,10 @@ export const execute = async () => {
     
     const formattedOrders = formatOrdersForWhatsapp(orders);
     
-    console.log("[Command /listado] Listado de pedidos formateado generado.");
+    console.log("--- INICIO DEL LISTADO FORMATEADO ---");
+    console.log(formattedOrders);
+    console.log("--- FIN DEL LISTADO FORMATEADO ---");
+    
     return formattedOrders;
   } catch (error) {
     console.error("[Command /listado] Error al ejecutar el comando:", error);

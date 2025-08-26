@@ -8,21 +8,35 @@ export const formatOrdersForWhatsapp = (orders) => {
     return 'No hay pedidos pendientes para mostrar.';
   }
 
-  return orders.map(order => {
-    // Extraemos el número de teléfono del cliente del remoteJid
-    const clientNumber = order.remoteJid.split('@')[0];
-    const deliveryInfo = order.fecha_hora_entrega || 'Entrega no especificada';
-    
-    const productDetails = order.productos
-      .map(p => `${p.cantidad} ${p.nombre}`)
-      .join('\n');
+  return orders.map((order, index) => {
+    try {
+      console.log(`[Formatter] Procesando pedido #${index + 1}, ID: ${order._id}`);
       
-    const totalAmount = order.monto_total || 'Monto no especificado';
+      // Verificación defensiva para productos
+      if (!order.productos || !Array.isArray(order.productos)) {
+        console.warn(`[Formatter] El pedido ${order._id} no tiene un array de productos válido.`);
+        return `---------
+Pedido con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
+      }
 
-    return `---------
+      const clientNumber = order.remoteJid ? order.remoteJid.split('@')[0] : 'Cliente no especificado';
+      const deliveryInfo = order.fecha_hora_entrega || 'Entrega no especificada';
+      
+      const productDetails = order.productos
+        .map(p => `${p.cantidad || '?'} ${p.nombre || 'Producto sin nombre'}`)
+        .join('\n');
+        
+      const totalAmount = order.monto_total || 'Monto no especificado';
+
+      return `---------
 Pedido de: ${clientNumber}
 ${deliveryInfo}
 ${productDetails}
 ${totalAmount}`;
-  }).join('\n\n'); // Usamos doble salto de línea para separar mejor los pedidos
+    } catch (error) {
+      console.error(`[Formatter] Error al procesar el pedido con ID: ${order._id}`, error);
+      return `---------
+Error al procesar pedido ID: ${order._id}`;
+    }
+  }).join('\n\n');
 };
