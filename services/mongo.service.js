@@ -86,20 +86,24 @@ export const getRecentMessages = async (contactJid, limit = 10) => {
  * Actualiza un chat con el estado y resumen provistos por la IA.
  * @param {string} contactJid - El JID del contacto.
  * @param {string} state - El nuevo estado de la conversación.
- * @param {string} summary - El nuevo resumen contextual.
+ * @param {string} [summary] - El nuevo resumen contextual (opcional).
  */
 export const updateChatAnalysis = async (contactJid, state, summary) => {
     if (!collection) return;
     try {
+        const updateFields = { 
+            stateConversation: state,
+            updatedAt: new Date() 
+        };
+
+        // Solo actualiza el resumen si se proporciona uno.
+        if (summary) {
+            updateFields.contextualSummary = summary;
+        }
+
         await collection.updateOne(
             { contactJid: contactJid },
-            { 
-                $set: { 
-                    stateConversation: state,
-                    contextualSummary: summary, // Este es el nuevo campo para el resumen
-                    updatedAt: new Date() 
-                } 
-            }
+            { $set: updateFields }
         );
         console.log(`[mongo.service] Análisis guardado para ${contactJid}. Estado: ${state}`);
     } catch (err) {
@@ -107,6 +111,28 @@ export const updateChatAnalysis = async (contactJid, state, summary) => {
     }
 };
 
+/**
+ * Obtiene contactName de chat por su JID.
+ * @param {string} contactJid - El JID del contacto.
+ * @returns {Promise<Object|null>} - El documento del chat o null si no se encuentra.
+ */
+export const getChatByJid = async (contactJid) => {
+    if (!collection) {
+        console.error("[mongo.service] La colección no está inicializada para getChatByJid.");
+        return null;
+    }
+    try {
+        // Usamos una proyección para obtener solo el campo contactName y ser más eficientes.
+        const chat = await collection.findOne(
+            { contactJid: contactJid },
+            { projection: { contactName: 1, _id: 0 } } // Solo queremos el nombre
+        );
+        return chat ? chat.contactName : null;
+    } catch (err) {
+        console.error('[mongo.service] Error al obtener el chat por JID:', err);
+        return null;
+    }
+};
 /**
  * Guarda un documento de pedido en la colección 'pedidos'.
  * @param {Object} orderDocument - El documento del pedido a guardar.
@@ -129,16 +155,19 @@ export const saveOrderToDb = async (orderDocument) => {
 
 /**
  * Obtiene todos los pedidos de la colección 'pedidos'.
+ * @param {Object} [filter={}] - Objeto de filtro de MongoDB.
+ * @param {Object} [sort={}] - Objeto de ordenación de MongoDB.
  * @returns {Promise<Array>} - Un array con todos los pedidos.
  */
-export const getAllOrders = async () => {
+export const getAllOrders = async (filter = {}, sort = {}) => {
   if (!dbClient) {
     console.error("[mongo.service] Conexión a DB no disponible.");
     return [];
   }
   try {
+    console.log('[mongo.service - DEBUG] getAllOrders con filtro:', JSON.stringify(filter, null, 2));
     const pedidosCollection = dbClient.db().collection('pedidos');
-    const orders = await pedidosCollection.find({}).toArray();
+    const orders = await pedidosCollection.find(filter).sort(sort).toArray();
     return orders;
   } catch (error) {
     console.error('[mongo.service] Error al obtener los pedidos:', error);

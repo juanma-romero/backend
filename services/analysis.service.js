@@ -22,7 +22,7 @@ const formatMessagesForPrompt = (messages) => {
  */
 export const triggerConversationAnalysis = async (contactJid) => {
   try {
-    // Corregido: Llamar a getRecentMessages y ajustar el formato del prompt.
+    
     const conversationHistory = await getRecentMessages(contactJid, 15); // Obtenemos los últimos 15 mensajes.
     const formattedPrompt = formatMessagesForPrompt(conversationHistory);
 

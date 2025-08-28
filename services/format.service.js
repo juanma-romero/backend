@@ -19,7 +19,10 @@ export const formatOrdersForWhatsapp = (orders) => {
 Pedido con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
       }
 
-      const clientNumber = order.remoteJid ? order.remoteJid.split('@')[0] : 'Cliente no especificado';
+      // Prepara el identificador del cliente, mostrando el nombre si está disponible.
+      const clientNumber = order.remoteJid ? order.remoteJid.split('@')[0] : 'Desconocido'; // Se declara una sola vez
+      const clientIdentifier = order.contactName ? `${order.contactName} (${clientNumber})` : clientNumber;
+      
       const deliveryInfo = order.fecha_hora_entrega || 'Entrega no especificada';
       
       const productDetails = order.productos
@@ -29,7 +32,7 @@ Pedido con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
       const totalAmount = order.monto_total || 'Monto no especificado';
 
       return `---------
-Pedido de: ${clientNumber}
+Pedido de: ${clientIdentifier} 
 ${deliveryInfo}
 ${productDetails}
 ${totalAmount}`;

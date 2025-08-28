@@ -18,7 +18,7 @@ export const processMessage = async (messageData) => {
 
   // 1. Intentar manejar el evento de agendar pedido primero.
   // La función handleOrderTrigger devuelve `true` si se encargó del mensaje.
-  const orderHandled = await handleOrderTrigger(messageData, pendingAnalysisTimers);
+  const orderHandled = handleOrderTrigger(messageData, pendingAnalysisTimers);
 
   // 2. Si el mensaje no fue para agendar un pedido, procedemos con el análisis general.
   if (!orderHandled) {

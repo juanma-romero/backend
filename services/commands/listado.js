@@ -9,7 +9,7 @@ import { formatOrdersForWhatsapp } from '../format.service.js';
  */
 export const execute = async () => {
   try {
-    console.log("[Command /listado] Ejecutando comando para listar pedidos.");
+    console.log("[Command listado] Ejecutando comando para listar pedidos.");
     const orders = await getAllOrders();
     
     const formattedOrders = formatOrdersForWhatsapp(orders);
@@ -20,7 +20,7 @@ export const execute = async () => {
     
     return formattedOrders;
   } catch (error) {
-    console.error("[Command /listado] Error al ejecutar el comando:", error);
+    console.error("[Command listado] Error al ejecutar el comando:", error);
     return "Hubo un error al generar el listado de pedidos.";
   }
 };
