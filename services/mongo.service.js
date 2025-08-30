@@ -11,8 +11,7 @@ export const setDbClient = (client) => {
 };
  
 /**
- * Guarda un mensaje en la conversación correcta.
- * La lógica de estado ha sido removida de aquí, será manejada por el servicio de análisis.
+ * Guarda un mensaje en la conversación correcta. 
  */
 export const saveMessage = async (messageData) => {
     if (!collection) {
@@ -47,7 +46,7 @@ export const saveMessage = async (messageData) => {
         };
 
         // Actualiza el nombre del contacto si viene en el mensaje
-        if (messageData.pushName) {
+        if (messageData.pushName&&messageData.key.fromMe === false) {
             updateOperation.$set.contactName = messageData.pushName;
         }
 
@@ -61,24 +60,24 @@ export const saveMessage = async (messageData) => {
         console.error('[mongo.service] Error al guardar el mensaje:', err);
     }
 };
-
+ 
 /**
- * Obtiene los últimos N mensajes de una conversación.
+ * Obtiene los últimos N mensajes de una conversación junto con el nombre del contacto.
  * @param {string} contactJid - El JID del contacto.
  * @param {number} limit - El número de mensajes a obtener.
- * @returns {Promise<Array>} - Una promesa que resuelve a un array de mensajes.
+ * @returns {Promise<Object>} - Una promesa que resuelve a un objeto con messages (array) y contactName (string).
  */
 export const getRecentMessages = async (contactJid, limit = 10) => {
-    if (!collection) return [];
+    if (!collection) return { messages: [], contactName: null };
     try {
         const chat = await collection.findOne(
             { contactJid: contactJid },
-            { projection: { messages: { $slice: -limit } } }
+            { projection: { messages: { $slice: -limit }, contactName: 1 } }
         );
-        return chat ? chat.messages : [];
+        return chat ? { messages: chat.messages, contactName: chat.contactName } : { messages: [], contactName: null };
     } catch (err) {
         console.error('[mongo.service] Error al obtener mensajes recientes:', err);
-        return [];
+        return { messages: [], contactName: null };
     }
 };
 

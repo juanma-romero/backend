@@ -28,11 +28,11 @@ const getCurrentFormattedDateTime = () => {
     // Opciones para formatear la fecha y hora en la zona horaria correcta
     const options = {
         weekday: 'long',
-        year: 'numeric',
-        month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
+        month: '2-digit',
+        year: 'numeric',                
         hour12: false,
         timeZone: timeZone,
     };
@@ -57,8 +57,8 @@ const getCurrentFormattedDateTime = () => {
  */
 export const triggerOrderAnalysis = async (contactJid) => {
   try {
-    const conversationHistory = await getRecentMessages(contactJid, 20); // Obtenemos los últimos 20 mensajes para tener más contexto.
-    const conversationText = formatMessagesForPrompt(conversationHistory);
+    const conversationHistory = await getRecentMessages(contactJid, 20); // Obtenemos los últimos 20 mensajes para tener más contexto y el contactName.
+    const conversationText = formatMessagesForPrompt(conversationHistory.messages || []);
 
     const currentDateTime = getCurrentFormattedDateTime();
     const formattedPrompt = `Contexto Adicional:\n- Fecha y hora de la solicitud del pedido: ${currentDateTime}\n\n--- Historial de Conversación ---\n${conversationText}`;
