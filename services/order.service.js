@@ -1,4 +1,4 @@
-import { saveOrderToDb, getRecentMessages, updateChatAnalysis, getChatByJid } from './mongo.service.js';
+import { saveOrderToDb, getRecentMessages, updateChatAnalysis, getChatByJid, getNextOrderNumber } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
 
 /**
@@ -85,13 +85,16 @@ export const triggerOrderAnalysis = async (contactJid) => {
     console.error('[order.service] Error en el análisis de pedido:', error);
   }
 };
-
+ 
 /**
  * Crea un nuevo documento de pedido en la base de datos.
  * @param {Object} orderData - Los datos del pedido extraídos por la IA.
  */
 export const createOrder = async (orderData) => {
   try {
+    // Obtenemos el siguiente número de pedido secuencial
+    const numeroPedido = await getNextOrderNumber();
+
     const orderDocumentData = { ...orderData };
 
     // --- CORRECCIÓN CRÍTICA ---
@@ -111,11 +114,12 @@ export const createOrder = async (orderData) => {
     // --- INICIO DEBUG ---
     // Buscamos el nombre del contacto asociado a este JID.
     const contactName = await getChatByJid(orderData.remoteJid);
-    console.log(`[order.service - DEBUG] Buscando nombre para ${orderData.remoteJid}.`);
-    console.log(`[order.service - DEBUG] Nombre de contacto a guardar: "${contactName}"`);
+    //console.log(`[order.service - DEBUG] Buscando nombre para ${orderData.remoteJid}.`);
+    //console.log(`[order.service - DEBUG] Nombre de contacto a guardar: "${contactName}"`);
     // --- FIN DEBUG ---
 
     const orderDocument = {
+      numero_pedido: numeroPedido, // Número de pedido secuencial para uso interno
       ...orderDocumentData,
       contactName: contactName, // Guardamos el nombre del contacto en el pedido
       estado: 'confirmado_por_admin',

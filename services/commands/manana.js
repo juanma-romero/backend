@@ -25,7 +25,8 @@ export const execute = async () => {
       fecha_hora_entrega: {
         $gte: startOfTomorrow,
         $lt: endOfTomorrow
-      }
+      },
+      estado: 'confirmado_por_admin'
     };
 
     const sort = { fecha_hora_entrega: 1 }; // Ordenación ascendente

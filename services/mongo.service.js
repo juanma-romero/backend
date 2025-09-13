@@ -132,6 +132,7 @@ export const getChatByJid = async (contactJid) => {
         return null;
     }
 };
+
 /**
  * Guarda un documento de pedido en la colección 'pedidos'.
  * @param {Object} orderDocument - El documento del pedido a guardar.
@@ -171,5 +172,81 @@ export const getAllOrders = async (filter = {}, sort = {}) => {
   } catch (error) {
     console.error('[mongo.service] Error al obtener los pedidos:', error);
     return [];
+  }
+};
+
+/**
+ * Obtiene el siguiente número de pedido secuencial de la colección 'counters'.
+ * Inicia el contador en 297 si no existe.
+ * @returns {Promise<number>} - El siguiente número de pedido.
+ */
+export const getNextOrderNumber = async () => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible para getNextOrderNumber.");
+    throw new Error("La conexión a la base de datos no está disponible.");
+  }
+  try {
+    const countersCollection = dbClient.db().collection('counters');
+
+    // Buscamos el contador.
+    let counter = await countersCollection.findOne({ _id: 'orderNumber' });
+
+    // Si no existe, lo creamos con el valor inicial deseado.
+    if (!counter) {
+      const startValue = 297; // El siguiente a 296
+      await countersCollection.insertOne({ _id: 'orderNumber', sequence_value: startValue });
+      return startValue;
+    }
+
+    // Si existe, lo incrementamos atómicamente y devolvemos el nuevo valor.
+    const sequenceDocument = await countersCollection.findOneAndUpdate(
+      { _id: 'orderNumber' },
+      { $inc: { sequence_value: 1 } },
+      { returnDocument: 'after' } // Devuelve el documento después de la actualización
+    );
+
+    return sequenceDocument.sequence_value;
+
+  } catch (error) {
+    console.error('[mongo.service] Error al obtener el siguiente número de pedido:', error);
+    throw error;
+  }
+};
+
+/**
+ * Actualiza el estado de un pedido por su número de pedido.
+ * @param {number} orderNumber - El número del pedido a actualizar.
+ * @param {string} newStatus - El nuevo estado para el pedido.
+ * @returns {Promise<Object|null>} - El documento del pedido actualizado, null si no se encontró, o un objeto especial si ya está en el estado deseado.
+ */
+export const updateOrderStatusByNumber = async (orderNumber, newStatus) => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible.");
+    return null;
+  }
+  try {
+    const pedidosCollection = dbClient.db().collection('pedidos');
+
+    // Primero verificamos el estado actual del pedido
+    const currentOrder = await pedidosCollection.findOne({ numero_pedido: orderNumber });
+    if (!currentOrder) {
+      return null; // Pedido no encontrado
+    }
+
+    // Si el pedido ya tiene el estado deseado, devolvemos un indicador especial
+    if (currentOrder.estado === newStatus) {
+      return { alreadyInState: true, order: currentOrder };
+    }
+
+    // Si no está en el estado deseado, procedemos con la actualización
+    const result = await pedidosCollection.findOneAndUpdate(
+      { numero_pedido: orderNumber },
+      { $set: { estado: newStatus, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+    return result; // En el driver de MongoDB Node.js, findOneAndUpdate devuelve el documento directamente
+  } catch (error) {
+    console.error(`[mongo.service] Error al actualizar el estado del pedido #${orderNumber}:`, error);
+    throw error;
   }
 };

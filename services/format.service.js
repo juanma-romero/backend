@@ -48,13 +48,14 @@ export const formatOrdersForWhatsapp = (orders) => {
 
   return orders.map((order, index) => {
     try {
-      console.log(`[Formatter] Procesando pedido #${index + 1}, ID: ${order._id}`);
+      const numeroPedido = order.numero_pedido || (index + 1);
+      console.log(`[Formatter] Procesando pedido #${numeroPedido}, ID: ${order._id}`);
       //console.log(order)
       // Verificación defensiva para productos
       if (!order.productos || !Array.isArray(order.productos)) {
         console.warn(`[Formatter] El pedido ${order._id} no tiene un array de productos válido.`);
         return `---------
-Pedido con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
+Pedido #${numeroPedido} con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
       }
 
       // Prepara el identificador del cliente, mostrando el nombre si está disponible.
@@ -62,22 +63,23 @@ Pedido con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
       const clientIdentifier = order.contactName ? `${order.contactName} (${clientNumber})` : clientNumber;
 
       const deliveryInfo = order.fecha_hora_entrega ? formatDateForDisplay(new Date(order.fecha_hora_entrega)) : 'Entrega no especificada';
-      
+
       const productDetails = order.productos
         .map(p => `${p.cantidad || '?'} ${p.nombre || 'Producto sin nombre'}`)
         .join('\n');
-        
+
       const totalAmount = order.monto_total || 'Monto no especificado';
-      
+
       return `---------
-Pedido de: ${clientIdentifier} 
+Pedido #${numeroPedido} de: ${clientIdentifier}
 ${deliveryInfo}
 ${productDetails}
 ${totalAmount}`;
     } catch (error) {
-      console.error(`[Formatter] Error al procesar el pedido con ID: ${order._id}`, error);
+      const numeroPedido = order.numero_pedido || (index + 1);
+      console.error(`[Formatter] Error al procesar el pedido #${numeroPedido} con ID: ${order._id}`, error);
       return `---------
-Error al procesar pedido ID: ${order._id}`;
+Error al procesar pedido #${numeroPedido} ID: ${order._id}`;
     }
   }).join('\n\n');
 };

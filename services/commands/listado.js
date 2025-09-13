@@ -9,15 +9,16 @@ import { formatOrdersForWhatsapp } from '../format.service.js';
  */
 export const execute = async () => {
   try {
-    console.log("[Command listado] Ejecutando comando para listar pedidos.");
-    const orders = await getAllOrders();
-    
+    console.log("[Command listado] Ejecutando comando para listar pedidos activos.");
+    const filter = { estado: 'confirmado_por_admin' };
+    const orders = await getAllOrders(filter);
+
     const formattedOrders = formatOrdersForWhatsapp(orders);
-    
+
     console.log("--- INICIO DEL LISTADO FORMATEADO ---");
     console.log(formattedOrders);
     console.log("--- FIN DEL LISTADO FORMATEADO ---");
-    
+
     return formattedOrders;
   } catch (error) {
     console.error("[Command listado] Error al ejecutar el comando:", error);

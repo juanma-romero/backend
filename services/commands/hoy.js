@@ -21,7 +21,8 @@ export const execute = async () => {
       fecha_hora_entrega: {
         $gte: startOfToday,
         $lt: endOfToday
-      }
+      },
+      estado: 'confirmado_por_admin'
     };
 
     // --- INICIO DE LOGS PARA DEBUG ---
