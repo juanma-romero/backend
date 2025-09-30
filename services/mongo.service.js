@@ -174,7 +174,7 @@ export const getAllOrders = async (filter = {}, sort = {}) => {
     return [];
   }
 };
-
+ 
 /**
  * Obtiene el siguiente número de pedido secuencial de la colección 'counters'.
  * Inicia el contador en 297 si no existe.
