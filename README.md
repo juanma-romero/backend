@@ -2,10 +2,7 @@
 
 ## Descripción General
 
-El sistema es una plataforma de gestión de pedidos a través de WhatsApp que integra múltiples componentes para automatizar el proceso de atención al cliente, análisis de conversaciones y gestión de pedidos. El sistema consta de dos servidores principales:
-
-1. __Servidor 'dash'__: Utiliza la librería Baileys para recibir mensajes de clientes a través de WhatsApp
-2. __Servidor 'wabi'__: Utiliza la API de WhatsApp para procesar comandos de administradores
+El sistema es una plataforma de gestión de pedidos a través de WhatsApp que integra múltiples componentes para automatizar el proceso de atención al cliente, análisis de conversaciones y gestión de pedidos. 
 
 ## Arquitectura del Sistema
 
@@ -24,19 +21,14 @@ El sistema expone dos endpoints principales:
 
 __Endpoint: POST /api/messages__
 
-- Recibe mensajes de clientes provenientes del servidor 'dash'
+- Recibe mensajes de clientes provenientes del servicio 'dashwhat2'
 - Guarda inmediatamente el mensaje en MongoDB
 - Procesa el mensaje para análisis de IA
 - Retorna status 200
 
 __Endpoint: POST /api/whatsapp-inbound__
 
-- Recibe comandos de administradores del servidor 'wabi'
-
-- Procesa dos formatos de payload:
-
-  - Formato WABI: `{ "message": "/listado" }`
-  - Formato simulador: `{ "message": { "text": { "body": "/listado" } } }`
+- Recibe comandos de administradores
 
 - Ejecuta comandos de administrador si comienza con '/'
 
@@ -99,13 +91,13 @@ __Funciones principales:__
   - `/manana`: Lista pedidos para mañana
   - `/hecho`: Marca pedido como completado
   - `/reactivar`: Reactiva pedido
-  - `/odoo`: Comando para integración con Odoo
+  - `/erp`: Comando para integración con ERPNext (a desarrollar)
 
 ## Flujo de Trabajo
 
 ### Flujo de Mensajes de Clientes
 
-1. Cliente envía mensaje por WhatsApp → Servidor 'dash' (Baileys) → Servidor backend endpoint `/api/messages`
+1. Cliente envía mensaje por WhatsApp → Servicio 'dashwhat2' (Baileys) → Servidor backend endpoint `/api/messages`
 2. Mensaje se guarda inmediatamente en MongoDB (colección 'chatsV2')
 3. Mensaje se procesa para análisis (60 segundos de espera por posibles respuestas)
 4. IA analiza la conversación y actualiza estado/resumen
@@ -113,7 +105,7 @@ __Funciones principales:__
 
 ### Flujo de Comandos de Administrador
 
-1. Admin envía comando por WhatsApp → Servidor 'wabi' (API WhatsApp) → Servidor backend endpoint `/api/whatsapp-inbound`
+1. Admin envía comando por WhatsApp → Servicio 'dashwhat2' (Baileys) → Servidor backend endpoint `/api/whatsapp-inbound`
 2. Sistema identifica y ejecuta el comando correspondiente
 3. Se devuelve respuesta al administrador
 
