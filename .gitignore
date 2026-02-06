@@ -1,2 +1,5 @@
 .env
 error.txt
+tests/
+node_modules/
+main.js

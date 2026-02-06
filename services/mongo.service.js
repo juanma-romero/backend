@@ -1,10 +1,18 @@
 // services/mongo.service.js
 let collection;
+let dbClient;
 
 export const setCollection = (dbCollection) => {
     collection = dbCollection;
 };
-// Esta función es la única que sabe cómo guardar un mensaje.
+
+export const setDbClient = (client) => {
+    dbClient = client;
+};
+ 
+/**
+ * Guarda un mensaje en la conversación correcta. 
+ */
 export const saveMessage = async (messageData) => {
     if (!collection) {
         console.error("[mongo.service] La colección no está inicializada.");
@@ -18,42 +26,27 @@ export const saveMessage = async (messageData) => {
     try {
         const remoteJid = messageData.key.remoteJid;
 
-        // Lógica de formato de mensaje (extraída del index.js original)
         const formattedMessage = {
             id: messageData.key.id,
-            role: messageData.key.fromMe ? 'assistant' : 'user',
-            type: messageData.type,
-            content: messageData.content || null,
-            caption: messageData.caption || null,
-            mediaUrl: messageData.mediaUrl || null,
-            contactInfo: messageData.contactInfo || null,
-            quotedMessage: messageData.quotedMessage || null,
-            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp) : new Date()
+            role: messageData.key.fromMe ? 'assistant' : 'user', // 'assistant' es el admin, 'user' es el cliente
+            type: messageData.type || 'text',
+            content: messageData.content || messageData.caption || null,
+            timestamp: messageData.messageTimestamp ? new Date(messageData.messageTimestamp ) : new Date()
         };
 
-        // Lógica para determinar el estado de la conversación
-        const currentChat = await collection.findOne({ contactJid: remoteJid });
-        let updatedStateConversation = 'No leido';
-        if (currentChat && currentChat.stateConversation === 'Resuelto') {
-            updatedStateConversation = 'No leido';
-        } else if (currentChat) {
-            updatedStateConversation = currentChat.stateConversation;
-        }
-
-        // Lógica de actualización de la base de datos
         const updateOperation = {
             $push: { messages: formattedMessage },
-            $set: {
-                stateConversation: updatedStateConversation,
-                updatedAt: new Date()
-            },
+            $set: { updatedAt: new Date() },
             $setOnInsert: {
                 contactJid: remoteJid,
+                stateConversation: 'Sin Contestar', // Estado inicial por defecto para un chat nuevo
+                contextualSummary: 'Nuevo chat esperando primera respuesta.', // Resumen inicial
                 createdAt: new Date()
             }
         };
 
-        if (!messageData.key.fromMe && messageData.pushName) {
+        // Actualiza el nombre del contacto si viene en el mensaje
+        if (messageData.pushName&&messageData.key.fromMe === false) {
             updateOperation.$set.contactName = messageData.pushName;
         }
 
@@ -66,4 +59,194 @@ export const saveMessage = async (messageData) => {
     } catch (err) {
         console.error('[mongo.service] Error al guardar el mensaje:', err);
     }
-}
+};
+ 
+/**
+ * Obtiene los últimos N mensajes de una conversación junto con el nombre del contacto.
+ * @param {string} contactJid - El JID del contacto.
+ * @param {number} limit - El número de mensajes a obtener.
+ * @returns {Promise<Object>} - Una promesa que resuelve a un objeto con messages (array) y contactName (string).
+ */
+export const getRecentMessages = async (contactJid, limit = 10) => {
+    if (!collection) return { messages: [], contactName: null };
+    try {
+        const chat = await collection.findOne(
+            { contactJid: contactJid },
+            { projection: { messages: { $slice: -limit }, contactName: 1 } }
+        );
+        return chat ? { messages: chat.messages, contactName: chat.contactName } : { messages: [], contactName: null };
+    } catch (err) {
+        console.error('[mongo.service] Error al obtener mensajes recientes:', err);
+        return { messages: [], contactName: null };
+    }
+};
+
+/**
+ * Actualiza un chat con el estado y resumen provistos por la IA.
+ * @param {string} contactJid - El JID del contacto.
+ * @param {string} state - El nuevo estado de la conversación.
+ * @param {string} [summary] - El nuevo resumen contextual (opcional).
+ */
+export const updateChatAnalysis = async (contactJid, state, summary) => {
+    if (!collection) return;
+    try {
+        const updateFields = { 
+            stateConversation: state,
+            updatedAt: new Date() 
+        };
+
+        // Solo actualiza el resumen si se proporciona uno.
+        if (summary) {
+            updateFields.contextualSummary = summary;
+        }
+
+        await collection.updateOne(
+            { contactJid: contactJid },
+            { $set: updateFields }
+        );
+        console.log(`[mongo.service] Análisis guardado para ${contactJid}. Estado: ${state}`);
+    } catch (err) {
+        console.error('[mongo.service] Error al guardar el análisis del chat:', err);
+    }
+};
+
+/**
+ * Obtiene contactName de chat por su JID.
+ * @param {string} contactJid - El JID del contacto.
+ * @returns {Promise<Object|null>} - El documento del chat o null si no se encuentra.
+ */
+export const getChatByJid = async (contactJid) => {
+    if (!collection) {
+        console.error("[mongo.service] La colección no está inicializada para getChatByJid.");
+        return null;
+    }
+    try {
+        // Usamos una proyección para obtener solo el campo contactName y ser más eficientes.
+        const chat = await collection.findOne(
+            { contactJid: contactJid },
+            { projection: { contactName: 1, _id: 0 } } // Solo queremos el nombre
+        );
+        return chat ? chat.contactName : null;
+    } catch (err) {
+        console.error('[mongo.service] Error al obtener el chat por JID:', err);
+        return null;
+    }
+};
+
+/**
+ * Guarda un documento de pedido en la colección 'pedidos'.
+ * @param {Object} orderDocument - El documento del pedido a guardar.
+ * @returns {Promise<Object>} - El documento guardado.
+ */
+export const saveOrderToDb = async (orderDocument) => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible.");
+    return null;
+  }
+  try {
+    const pedidosCollection = dbClient.db().collection('pedidos');
+    const result = await pedidosCollection.insertOne(orderDocument);
+    return { _id: result.insertedId, ...orderDocument };
+  } catch (error) {
+    console.error('[mongo.service] Error al guardar el pedido:', error);
+    throw error;
+  }
+};
+
+/**
+ * Obtiene todos los pedidos de la colección 'pedidos'.
+ * @param {Object} [filter={}] - Objeto de filtro de MongoDB.
+ * @param {Object} [sort={}] - Objeto de ordenación de MongoDB.
+ * @returns {Promise<Array>} - Un array con todos los pedidos.
+ */
+export const getAllOrders = async (filter = {}, sort = {}) => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible.");
+    return [];
+  }
+  try {
+    console.log('[mongo.service - DEBUG] getAllOrders con filtro:', JSON.stringify(filter, null, 2));
+    const pedidosCollection = dbClient.db().collection('pedidos');
+    const orders = await pedidosCollection.find(filter).sort(sort).toArray();
+    return orders;
+  } catch (error) {
+    console.error('[mongo.service] Error al obtener los pedidos:', error);
+    return [];
+  }
+};
+ 
+/**
+ * Obtiene el siguiente número de pedido secuencial de la colección 'counters'.
+ * Inicia el contador en 297 si no existe.
+ * @returns {Promise<number>} - El siguiente número de pedido.
+ */
+export const getNextOrderNumber = async () => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible para getNextOrderNumber.");
+    throw new Error("La conexión a la base de datos no está disponible.");
+  }
+  try {
+    const countersCollection = dbClient.db().collection('counters');
+
+    // Buscamos el contador.
+    let counter = await countersCollection.findOne({ _id: 'orderNumber' });
+
+    // Si no existe, lo creamos con el valor inicial deseado.
+    if (!counter) {
+      const startValue = 297; // El siguiente a 296
+      await countersCollection.insertOne({ _id: 'orderNumber', sequence_value: startValue });
+      return startValue;
+    }
+
+    // Si existe, lo incrementamos atómicamente y devolvemos el nuevo valor.
+    const sequenceDocument = await countersCollection.findOneAndUpdate(
+      { _id: 'orderNumber' },
+      { $inc: { sequence_value: 1 } },
+      { returnDocument: 'after' } // Devuelve el documento después de la actualización
+    );
+
+    return sequenceDocument.sequence_value;
+
+  } catch (error) {
+    console.error('[mongo.service] Error al obtener el siguiente número de pedido:', error);
+    throw error;
+  }
+};
+
+/**
+ * Actualiza el estado de un pedido por su número de pedido.
+ * @param {number} orderNumber - El número del pedido a actualizar.
+ * @param {string} newStatus - El nuevo estado para el pedido.
+ * @returns {Promise<Object|null>} - El documento del pedido actualizado, null si no se encontró, o un objeto especial si ya está en el estado deseado.
+ */
+export const updateOrderStatusByNumber = async (orderNumber, newStatus) => {
+  if (!dbClient) {
+    console.error("[mongo.service] Conexión a DB no disponible.");
+    return null;
+  }
+  try {
+    const pedidosCollection = dbClient.db().collection('pedidos');
+
+    // Primero verificamos el estado actual del pedido
+    const currentOrder = await pedidosCollection.findOne({ numero_pedido: orderNumber });
+    if (!currentOrder) {
+      return null; // Pedido no encontrado
+    }
+
+    // Si el pedido ya tiene el estado deseado, devolvemos un indicador especial
+    if (currentOrder.estado === newStatus) {
+      return { alreadyInState: true, order: currentOrder };
+    }
+
+    // Si no está en el estado deseado, procedemos con la actualización
+    const result = await pedidosCollection.findOneAndUpdate(
+      { numero_pedido: orderNumber },
+      { $set: { estado: newStatus, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+    return result; // En el driver de MongoDB Node.js, findOneAndUpdate devuelve el documento directamente
+  } catch (error) {
+    console.error(`[mongo.service] Error al actualizar el estado del pedido #${orderNumber}:`, error);
+    throw error;
+  }
+};

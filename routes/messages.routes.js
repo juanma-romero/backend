@@ -1,58 +1,74 @@
 // routes/messages.routes.js
 import { Router } from 'express';
-import { queryIAService } from '../services/ia.service.js';
 import { saveMessage } from '../services/mongo.service.js';
+import { handleAdminCommand } from '../services/command.handler.js';
+import { processMessage } from '../services/message.processor.js';
+import fs from 'fs';
+import path from 'path';
+
+// Leer configuración de números de administradores
+const adminPhonesPath = path.join(process.cwd(), 'admin-phones.json');
+const adminPhones = JSON.parse(fs.readFileSync(adminPhonesPath, 'utf-8'));
+
+// Función para verificar si un número es de administrador
+const isAdmin = (remoteJid) => {
+  const phoneNumber = remoteJid.split('@')[0];
+  return Object.values(adminPhones).includes(phoneNumber);
+};
 
 const router = Router();
 
-// --- Lógica para el endpoint de clientes ---
+// Endpoint que recibe los mensajes de clientes y comandos de administradores.
 router.post('/messages', async (req, res) => {
-  // Se define 'messageData' para este scope
   const messageData = req.body.message;
-  
+
   if (!messageData) {
-    console.warn("[Router /messages] Se recibió una petición sin cuerpo de mensaje.");
+    console.warn("[Router /messages] Petición recibida sin cuerpo de mensaje.");
     return res.status(400).send('Cuerpo del mensaje requerido.');
   }
 
-  // 1. Guardar el mensaje (delegamos a mongo.service)
-  await saveMessage(messageData);
+  // Verificar si el mensaje proviene de un administrador
+  if (isAdmin(messageData.key.remoteJid)) {
+    console.log(`[Router /messages] Mensaje de administrador detectado: ${messageData.key.remoteJid}`);
 
-  // 2. Lógica de negocio (detectar comandos)
-  const messageContent = messageData.content || '';
-  if (messageContent === '/listado') {
-    console.log(`[Router /messages] Comando '/listado' detectado.`);
-    // 3. Llamar a la IA (delegamos a ia.service)
-    const iaResponse = await queryIAService('¿Cuántos días tiene un año bisiesto?');
-    console.log('[Router /messages] Respuesta de la IA:', iaResponse?.answer);
+    // Si es un comando (comienza con '/'), procesarlo como comando
+    if (messageData.content && messageData.content.startsWith('/')) {
+      console.log(`[Router /messages] Procesando comando: ${messageData.content}`);
+
+      try {
+        const replyMessage = await handleAdminCommand(messageData.content);
+
+        if (replyMessage) {
+          console.log(`[Router /messages] Respuesta del comando: "${replyMessage.substring(0, 50)}..."`);
+          // Aquí se podría enviar la respuesta directamente al servidor 'dash'
+          // Por ahora retornamos la respuesta para que el servidor 'dash' la maneje
+          return res.json({ reply: replyMessage, targetJid: messageData.key.remoteJid });
+        } else {
+          return res.sendStatus(200);
+        }
+      } catch (error) {
+        console.error('[Router /messages] Error procesando comando de administrador:', error);
+        return res.status(500).send('Error procesando comando');
+      }
+    } else {
+      // Mensaje de administrador pero no es comando, ignorar
+      console.log(`[Router /messages] Mensaje de administrador ignorado (no es comando): ${messageData.content}`);
+      return res.sendStatus(200);
+    }
+  } else {
+    // Mensaje de cliente regular - comportamiento original
+    console.log(`[Router /messages] Procesando mensaje de cliente: ${messageData.key.remoteJid}`);
+
+    // 1. Guardar el mensaje en la DB inmediatamente.
+    await saveMessage(messageData);
+
+    // 2. Delegar toda la lógica de procesamiento al Message Processor.
+    await processMessage(messageData);
+
+    res.sendStatus(200);
   }
-
-  res.sendStatus(200);
 });
 
 
-// --- Lógica para el endpoint de administradores ---
-// El error ocurría aquí porque esta parte no estaba completa en el plan anterior.
-router.post('/whatsapp-inbound', async (req, res) => {
-    // Se define 'adminMessageData' para este scope, no 'messageData'
-    const adminMessageData = req.body;
-  
-    if (!adminMessageData?.message?.text?.body) {
-      console.warn("[Router /whatsapp-inbound] Se recibió una petición sin el formato esperado.");
-      return res.status(400).send('Formato de mensaje de admin incorrecto.');
-    }
-    
-    // 2. Lógica de negocio (detectar comandos)
-    const messageContent = adminMessageData.message.text.body || '';
-    if (messageContent === '/listado') {
-      console.log(`[Router /whatsapp-inbound] Comando '/listado' detectado.`);
-      // 3. Llamar a la IA (delegamos a ia.service)
-      const iaResponse = await queryIAService('¿Cuántos días tiene un año bisiesto?');
-      console.log('[Router /whatsapp-inbound] Respuesta de la IA:', iaResponse?.answer);
-    }
 
-    res.sendStatus(200);
-})
-
-
-export default router
+export default router;
