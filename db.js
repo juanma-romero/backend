@@ -13,8 +13,9 @@ async function connectToDatabase() {
   }
   try {
     await client.connect();
-    console.log('Connected to MongoDB via db.js');
-    db = client.db('dash');
+    const dbName = process.env.NODE_ENV === 'local' ? 'test' : 'dash';
+    console.log(`Connected to MongoDB: ${dbName} via db.js`);
+    db = client.db(dbName);
     return { db, client };
   } catch (err) {
     console.error('Error connecting to MongoDB via db.js:', err);
