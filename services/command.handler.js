@@ -4,7 +4,6 @@ import * as mananaCommand from './commands/manana.js';
 import * as hoyCommand from './commands/hoy.js';
 import * as completoCommand from './commands/completo.js';
 import * as reactivarCommand from './commands/reactivar.js';
-import * as odooCommand from './commands/odoo.js';
 
 // Un mapa para registrar todos los comandos disponibles.
 // La clave es el nombre del comando (ej. 'listado') y el valor es el módulo del comando.
@@ -14,7 +13,7 @@ const commands = {
   'hoy': hoyCommand,
   'hecho': completoCommand,
   'reactivar': reactivarCommand,
-  'odoo': odooCommand,
+
 
   // Futuros comandos se agregarán aquí.
   // '/otrocomando': otroComandoModule,
