@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { saveMessage } from '../services/mongo.service.js';
 import { handleAdminCommand } from '../services/command.handler.js';
 import { processMessage } from '../services/message.processor.js';
+import { getMessageText } from '../services/format.service.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -27,16 +28,20 @@ router.post('/messages', async (req, res) => {
     return res.status(400).send('Cuerpo del mensaje requerido.');
   }
 
+  // Extraer texto del payload dinámico de Baileys 
+  const textContent = getMessageText(messageData);
+  messageData.textContent = textContent; // Lo inyectamos para que otros servicios lo usen fácilmente
+  console.log(`[Router /messages] Contenido recibido: "${textContent}"`);
   // Verificar si el mensaje proviene de un administrador
   if (isAdmin(messageData.key.remoteJid)) {
     console.log(`[Router /messages] Mensaje de administrador detectado: ${messageData.key.remoteJid}`);
 
     // Si es un comando (comienza con '/'), procesarlo como comando
-    if (messageData.content && messageData.content.startsWith('/')) {
-      console.log(`[Router /messages] Procesando comando: ${messageData.content}`);
+    if (textContent && textContent.startsWith('/')) {
+      console.log(`[Router /messages] Procesando comando: ${textContent}`);
 
       try {
-        const replyMessage = await handleAdminCommand(messageData.content);
+        const replyMessage = await handleAdminCommand(textContent);
 
         if (replyMessage) {
           console.log(`[Router /messages] Respuesta del comando: "${replyMessage.substring(0, 50)}..."`);
@@ -52,7 +57,7 @@ router.post('/messages', async (req, res) => {
       }
     } else {
       // Mensaje de administrador pero no es comando, ignorar
-      console.log(`[Router /messages] Mensaje de administrador ignorado (no es comando): ${messageData.content}`);
+      console.log(`[Router /messages] Mensaje de administrador ignorado (no es comando): ${textContent}`);
       return res.sendStatus(200);
     }
   } else {

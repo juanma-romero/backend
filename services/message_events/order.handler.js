@@ -10,11 +10,14 @@ import { triggerOrderAnalysis } from '../order.service.js';
 export const handleOrderTrigger = async (messageData, pendingAnalysisTimers) => {
   const contactJid = messageData.key.remoteJid;
   const isFromMe = messageData.key.fromMe;
-  const textContent = messageData.content || '';
-
+  const textContent = messageData.textContent || '';
+  console.log(isFromMe);
+  console.log('espacio')
+  console.log(messageData.key.fromMe)
+  console.log(`[OrderHandler] Contenido recibido: "${textContent}"`);
   if (isFromMe && textContent.startsWith('Entonces te agendo:')) {
     console.log(`[OrderHandler] Comando de agendar detectado. Disparando análisis de pedido.`);
-    
+
     // Detenemos cualquier temporizador de análisis de estado pendiente
     if (pendingAnalysisTimers.has(contactJid)) {
       clearTimeout(pendingAnalysisTimers.get(contactJid));
@@ -24,7 +27,7 @@ export const handleOrderTrigger = async (messageData, pendingAnalysisTimers) => 
 
     // Llama a la función de análisis de pedido
     await triggerOrderAnalysis(contactJid);
-    
+
     return true; // Indicamos que este manejador se hizo cargo del mensaje.
   }
 

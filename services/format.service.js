@@ -83,3 +83,22 @@ Error al procesar pedido #${numeroPedido} ID: ${order._id}`;
     }
   }).join('\n\n');
 };
+
+/**
+ * Extrae texto de forma segura del nuevo payload de Baileys.
+ * @param {Object} messageData - El objeto del mensaje entrante.
+ * @returns {string} - El texto extraído.
+ */
+export const getMessageText = (messageData) => {
+  if (!messageData) return '';
+  // Fallback por si usamos el formato viejo en algún simulador sin actualizar:
+  if (messageData.content && typeof messageData.content === 'string') return messageData.content;
+  if (!messageData.message) return '';
+  
+  const msg = messageData.message;
+  if (typeof msg === 'string') return msg;
+  if (msg.conversation) return msg.conversation;
+  if (msg.extendedTextMessage && msg.extendedTextMessage.text) return msg.extendedTextMessage.text;
+  if (msg.imageMessage && msg.imageMessage.caption) return msg.imageMessage.caption;
+  return '';
+};

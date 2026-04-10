@@ -24,7 +24,7 @@ export const triggerConversationAnalysis = async (contactJid) => {
   try {
     
     const conversationHistory = await getRecentMessages(contactJid, 15); // Obtenemos los últimos 15 mensajes.
-    const formattedPrompt = formatMessagesForPrompt(conversationHistory);
+    const formattedPrompt = formatMessagesForPrompt(conversationHistory.messages || []);
 
     const analysisResult = await queryIAService('/analyze-conversation', formattedPrompt);
 

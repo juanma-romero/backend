@@ -12,111 +12,96 @@ El sistema es una plataforma de gestión de pedidos a través de WhatsApp que in
 
 - __Framework__: Express.js
 - __Puerto__: Configurable, por defecto 3000
-- __Función__: Orquestador de rutas y conexión a base de datos
-- __Conexión a MongoDB__: Se inicializa al arrancar el servidor, inyectando la colección 'chatsV2' en los servicios
+- __Inicialización__: Conecta a MongoDB e inyecta las dependencias (colección y cliente) en los servicios mediante setters (`setCollection`, `setDbClient`), asegurando que los servicios tengan acceso a la base de datos sin importar el ciclo de vida del servidor.
 
 #### 2. Rutas (routes/messages.routes.js)
 
-El sistema expone dos endpoints principales:
+El sistema expone un endpoint unificado para procesar tanto mensajes de clientes como acciones de administradores:
 
 __Endpoint: POST /api/messages__
 
-- Recibe mensajes de clientes provenientes del servicio 'dashwhat2'
-- Guarda inmediatamente el mensaje en MongoDB
-- Procesa el mensaje para análisis de IA
-- Retorna status 200
-
-__Endpoint: POST /api/whatsapp-inbound__
-
-- Recibe comandos de administradores
-
-- Ejecuta comandos de administrador si comienza con '/'
-
-- Retorna respuesta al comando o status 200
+- **Detección de Origen**: Identifica si el mensaje proviene de un administrador consultando `admin-phones.json`.
+- **Procesamiento de Comandos**: Si el remitente es admin y el contenido inicia con `/`, se ejecuta la lógica de `command.handler.js`.
+- **Flujo de Cliente**: Si es un mensaje de cliente, se guarda inmediatamente en MongoDB y se delega al `message.processor.js` para análisis de IA.
+- **Intercepción de Admin**: Detecta frases clave del admin en chats con clientes (ej: "Entonces te agendo:") para disparar flujos específicos como el de creación de pedidos.
 
 #### 3. Servicio de MongoDB (services/mongo.service.js)
 
 __Funciones principales:__
 
-- __saveMessage()__: Guarda mensajes en la colección 'chatsV2' organizados por contacto (remoteJid)
-- __getRecentMessages()__: Obtiene los últimos N mensajes de una conversación
-- __updateChatAnalysis()__: Actualiza estado y resumen contextual de la conversación
-- __getChatByJid()__: Obtiene el nombre del contacto por su JID
-- __saveOrderToDb()__: Guarda pedidos en la colección 'pedidos'
-- __getAllOrders()__: Obtiene todos los pedidos con posibilidad de filtrado y ordenamiento
-- __getNextOrderNumber()__: Genera números de pedido secuenciales (inicia en 297)
-- __updateOrderStatusByNumber()__: Actualiza el estado de un pedido por su número
+- __saveMessage()__: Guarda mensajes en la colección 'chatsV2' organizados por contacto (remoteJid).
+- __getRecentMessages()__: Obtiene los últimos N mensajes de una conversación.
+- __updateChatAnalysis()__: Actualiza estado y resumen contextual de la conversación.
+- __getChatByJid()__: Obtiene el nombre del contacto por su JID.
+- __saveOrderToDb()__: Guarda pedidos en la colección 'pedidos'.
+- __getAllOrders()__: Obtiene todos los pedidos con posibilidad de filtrado y ordenamiento.
+- __getNextOrderNumber()__: Genera números de pedido secuenciales (contador persistente en colección `counters`).
+- __updateOrderStatusByNumber()__: Actualiza el estado de un pedido por su número.
 
 #### 4. Procesador de Mensajes (services/message.processor.js)
 
-- Coordina el procesamiento de mensajes entrantes
-- Gestiona temporizadores para análisis diferido de conversaciones
-- Prioriza el manejo de comandos de agendamiento de pedidos
-- Delega a los manejadores específicos según el tipo de mensaje
+- Coordina el procesamiento de mensajes entrantes.
+- Gestiona temporizadores para análisis diferido de conversaciones (60 segundos de "tiempo de calma").
+- Prioriza el manejo de eventos de agendamiento sobre el análisis de estado general.
 
 #### 5. Manejadores de Eventos (services/message_events/)
 
-- __order.handler.js__: Detecta el comando "Entonces te agendo:" del admin y dispara análisis de pedido
-- __analysis.handler.js__: Implementa un sistema de "tiempo de calma" de 60 segundos antes de analizar la conversación
+- __order.handler.js__: Detecta el comando textual "Entonces te agendo:" enviado por un administrador en el chat de un cliente.
+- __analysis.handler.js__: Implementa el sistema de espera antes de enviar la conversación a la IA para evitar análisis parciales mientras el cliente sigue escribiendo.
 
 #### 6. Servicio de Análisis (services/analysis.service.js)
 
-- Obtiene los últimos 15 mensajes de una conversación
-- Formatea los mensajes para enviar a la IA
-- Detecta si hay un pedido o solo análisis de estado
-- Actualiza el estado de la conversación según el análisis
+- Obtiene el historial reciente para dar contexto a la IA.
+- Detecta automáticamente si la conversación ha derivado en un pedido o solo requiere actualización de estado.
 
 #### 7. Servicio de Pedidos (services/order.service.js)
 
-- Obtiene los últimos 20 mensajes para contexto de pedido
-- Genera números de pedido secuenciales
-- Crea documentos de pedido en la base de datos
-- Convierte fechas de string a objetos Date para MongoDB
-- Actualiza el estado de la conversación a 'Pedido Creado'
+- Genera números de pedido secuenciales (iniciando en 297).
+- **Manejo de Fechas**: Convierte las fechas recibidas de la IA (strings) a objetos `Date` de JavaScript para asegurar que MongoDB las procese correctamente en filtros y ordenamiento.
+- **Zona Horaria**: Utiliza `Etc/GMT+3` (UTC-3) para normalizar la fecha y hora de los pedidos independientemente de la ubicación del servidor.
 
 #### 8. Servicio de IA (services/ia.service.js)
 
-- Interfaz para comunicación con servidor FastAPI que conecta con API de IA
-- Endpoints disponibles: `/analyze-conversation` y `/analyze-order`
-- Configurable mediante variable de entorno `IA_SERVICE_URL`
+- Interfaz para comunicación con servidor FastAPI.
+- Configurable mediante variable de entorno `IA_SERVICE_URL`.
 
 #### 9. Manejador de Comandos (services/command.handler.js)
 
-- Sistema modular para comandos de administrador
-
-- Comandos disponibles:
-
-  - `/listado`: Lista pedidos confirmados
-  - `/hoy`: Lista pedidos para hoy
-  - `/manana`: Lista pedidos para mañana
-  - `/hecho`: Marca pedido como completado
-  - `/reactivar`: Reactiva pedido
-  - `/erp`: Comando para integración con ERPNext (a desarrollar)
+- Sistema modular que asigna comandos a archivos específicos en `services/commands/`.
+- __Comandos disponibles__:
+  - `/listado`: Lista todos los pedidos confirmados.
+  - `/hoy`: Muestra pedidos con entrega para la fecha actual.
+  - `/manana`: Muestra pedidos con entrega para el día siguiente.
+  - `/hecho <numero>`: Marca un pedido como terminado (usa `completo.js`).
+  - `/reactivar <numero>`: Cambia el estado de un pedido terminado de vuelta a confirmado.
+  - `/erp`: Reservado para futura integración con ERPNext.
 
 ## Flujo de Trabajo
 
 ### Flujo de Mensajes de Clientes
 
-1. Cliente envía mensaje por WhatsApp → Servicio 'dashwhat2' (Baileys) → Servidor backend endpoint `/api/messages`
-2. Mensaje se guarda inmediatamente en MongoDB (colección 'chatsV2')
-3. Mensaje se procesa para análisis (60 segundos de espera por posibles respuestas)
-4. IA analiza la conversación y actualiza estado/resumen
-5. Si se detecta pedido, se crea documento en colección 'pedidos'
-
-### Flujo de Comandos de Administrador
-
-1. Admin envía comando por WhatsApp → Servicio 'dashwhat2' (Baileys) → Servidor backend endpoint `/api/whatsapp-inbound`
-2. Sistema identifica y ejecuta el comando correspondiente
-3. Se devuelve respuesta al administrador
+1. Cliente envía mensaje → `/api/messages`.
+2. Persistencia inmediata en `chatsV2`.
+3. Inicio de temporizador de 60s. Si llega otro mensaje del mismo JID, el reloj se reinicia.
+4. Al expirar el tiempo, la IA analiza la conversación.
 
 ### Flujo de Agendamiento de Pedidos
 
-1. Admin responde a cliente con "Entonces te agendo:"
-2. Sistema detiene temporizador de análisis de estado
-3. Se dispara análisis específico de pedido
-4. IA extrae información del pedido
-5. Se crea documento de pedido en MongoDB
-6. Se actualiza estado de conversación a 'Pedido Creado'
+1. Admin escribe "Entonces te agendo:" en el chat del cliente.
+2. El sistema detecta la frase, cancela cualquier análisis de estado pendiente.
+3. Solicita a la IA extraer los datos estructurados del pedido del historial reciente.
+4. Crea el documento en la colección `pedidos` con estado inicial `confirmado_por_admin`.
+
+## Herramientas de Prueba
+
+### Simulador de Mensajes
+El proyecto incluye un simulador HTML para probar la lógica de recepción de mensajes y creación de pedidos sin necesidad de enviar mensajes reales por WhatsApp.
+
+- **Ubicación**: `tests/message_simulator.html`
+- **Uso**: 
+  1. Ejecutar un servidor estático en la carpeta `tests` (ej: `npx serve -l 5000 tests`).
+  2. Abrir en el navegador: `http://localhost:5000/message_simulator.html`.
+  3. Configurar el JID del contacto y el contenido del mensaje para simular la interacción.
 
 ## Estructura de Datos
 
@@ -125,7 +110,7 @@ __Funciones principales:__
 ```javascript
 {
   _id: ObjectId,
- contactJid: string,           // Identificador único del contacto
+  contactJid: string,           // Identificador único del contacto
   contactName: string,          // Nombre del contacto (si disponible)
   messages: [Message],          // Array de mensajes
   stateConversation: string,    // Estado actual de la conversación
@@ -140,59 +125,31 @@ __Funciones principales:__
 ```javascript
 {
   _id: ObjectId,
- numero_pedido: number,        // Número secuencial
+  numero_pedido: number,        // Número secuencial
   remoteJid: string,            // Identificador del contacto
   contactName: string,          // Nombre del cliente
   productos: [Product],         // Array de productos
-  fecha_hora_entrega: Date,     // Fecha y hora de entrega
+  fecha_hora_entrega: Date,     // Fecha y hora de entrega (BSON Date)
   monto_total: string,          // Monto total del pedido
-  estado: string,               // Estado del pedido
-  aprobado_por_cliente: boolean, // Aprobación del cliente
+  estado: string,               // Estado (confirmado_por_admin, terminado, etc.)
+  aprobado_por_cliente: boolean,
   createdAt: Date
-}
-```
-
-### Colección 'counters'
-
-```javascript
-{
-  _id: 'orderNumber',
-  sequence_value: number        // Último número de pedido asignado
 }
 ```
 
 ## Variables de Entorno
 
-- `MONGODB_URI`: Cadena de conexión a MongoDB Atlas
-- `IA_SERVICE_URL`: URL del servicio de inteligencia artificial
-- `PORT`: Puerto del servidor (opcional, por defecto 3000)
-
-## Consideraciones de Seguridad
-
-- El sistema no implementa autenticación explícita en los endpoints
-- Se recomienda proteger los endpoints con autenticación apropiada
-- Las variables sensibles se gestionan con dotenv
+- `MONGODB_URI`: Cadena de conexión a MongoDB.
+- `IA_SERVICE_URL`: URL del servicio de IA (FastAPI).
+- `PORT`: Puerto del servidor (por defecto 3000).
 
 ## Consideraciones de Escalabilidad
 
-- El sistema utiliza un Map() para gestionar temporizadores en memoria
-- En entornos de múltiples instancias, esta estrategia podría no funcionar correctamente
-- Considerar uso de Redis o base de datos para persistencia de temporizadores
-
-## Dependencias Principales
-
-- express: Framework web
-- mongodb: Driver de MongoDB
-- axios: Cliente HTTP para comunicación con IA
-- dotenv: Gestión de variables de entorno
-- cors: Configuración de políticas CORS
+- Los temporizadores de "tiempo de calma" se gestionan en memoria (`Map`). En un entorno con múltiples instancias (Load Balancer), se recomienda migrar estos temporizadores a **Redis**.
 
 ## Posibles Mejoras
 
-1. Implementar autenticación JWT para proteger endpoints
-2. Agregar logging estructurado con niveles
-3. Implementar manejo de errores global
-4. Agregar validación de entrada de datos
-5. Considerar uso de Redis para temporizadores en entornos escalables
-6. Implementar pruebas unitarias e integración
-7. Agregar monitoreo y métricas
+1. Implementar autenticación para proteger el endpoint `/api/messages`.
+2. Migrar la gestión de estados de mensajes a Redis para escalabilidad horizontal.
+3. Finalizar la integración `/erp`.
+4. Implementar validaciones de esquema con Joi o Zod para los payloads de la IA.
