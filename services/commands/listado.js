@@ -1,17 +1,19 @@
 // services/commands/listado.js
-import { getAllOrders } from '../mongo.service.js';
+import axios from 'axios';
 import { formatOrdersForWhatsapp } from '../format.service.js';
 
 /**
  * Ejecuta el comando para listar todos los pedidos.
- * Obtiene los pedidos, los formatea y devuelve el string resultante.
+ * Obtiene los pedidos desde ERPNext vía erp-service, los formatea y devuelve el string resultante.
  * @returns {Promise<string>} - El string formateado con la lista de pedidos o un mensaje de error.
  */
 export const execute = async () => {
   try {
-    console.log("[Command listado] Ejecutando comando para listar pedidos activos.");
-    const filter = { estado: 'confirmado_por_admin' };
-    const orders = await getAllOrders(filter);
+    console.log("[Command listado] Ejecutando comando para listar pedidos activos desde ERPNext.");
+    
+    const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
+    const response = await axios.get(`${erpServiceUrl}/api/orders/pending`);
+    const orders = response.data;
 
     const formattedOrders = formatOrdersForWhatsapp(orders);
 

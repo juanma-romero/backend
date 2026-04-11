@@ -65,7 +65,13 @@ __Funciones principales:__
 - Interfaz para comunicación con servidor FastAPI.
 - Configurable mediante variable de entorno `IA_SERVICE_URL`.
 
-#### 9. Manejador de Comandos (services/command.handler.js)
+#### 9. Servicio ERP (erp-service)
+
+- Microservicio en Python (FastAPI) para integración con ERPNext. Ubicado en su propio directorio en la raíz del proyecto.
+- **Fase 1 (Lectura)**: Proveedor del endpoint para consultar pedidos activos (`Sales Orders` en estado `Submitted`) directo hacia ERPNext en reemplazo de MongoDB.
+- Configurable mediante variable de entorno `ERP_SERVICE_URL` (por defecto `http://localhost:8001`).
+
+#### 10. Manejador de Comandos (services/command.handler.js)
 
 - Sistema modular que asigna comandos a archivos específicos en `services/commands/`.
 - __Comandos disponibles__:
