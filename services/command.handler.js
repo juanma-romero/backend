@@ -4,6 +4,7 @@ import * as mananaCommand from './commands/manana.js';
 import * as hoyCommand from './commands/hoy.js';
 import * as completoCommand from './commands/completo.js';
 import * as reactivarCommand from './commands/reactivar.js';
+import * as canceladoCommand from './commands/cancelado.js';
 
 // Un mapa para registrar todos los comandos disponibles.
 // La clave es el nombre del comando (ej. 'listado') y el valor es el módulo del comando.
@@ -13,7 +14,7 @@ const commands = {
   'hoy': hoyCommand,
   'hecho': completoCommand,
   'reactivar': reactivarCommand,
-
+  'cancelado': canceladoCommand,
 
   // Futuros comandos se agregarán aquí.
   // '/otrocomando': otroComandoModule,
@@ -41,6 +42,6 @@ export const handleAdminCommand = async (messageContent) => {
     return await command.execute(args);
   } else {
     console.log(`[CommandHandler] Comando "${commandWithSlash}" no reconocido o no es ejecutable.`);
-    return "El comando no fue reconocido. Intenta con /listado, /hoy, /manana, /hecho <num-pedido>, /reactivar <num-pedido> o /odoo.";
+    return "El comando no fue reconocido. Intenta con /listado, /hoy, /manana, /hecho <num-pedido>, /cancelado <num-pedido> o /reactivar <num-pedido>.";
   }
 };

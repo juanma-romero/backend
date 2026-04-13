@@ -51,17 +51,18 @@ const getCurrentFormattedDateTime = () => {
 };
 
 /**
- * Dispara el análisis de la conversación para la toma de un pedido.
+ * Dispara el análisis del resumen del pedido que tipeó el administrador.
  * Se llama cuando se detecta el comando "Entonces te agendo:".
  * @param {string} contactJid - El ID del contacto del chat.
+ * @param {string} orderSummaryText - El texto exacto que escribió el admin.
  */
-export const triggerOrderAnalysis = async (contactJid) => {
+export const triggerOrderAnalysis = async (contactJid, orderSummaryText) => {
   try {
-    const conversationHistory = await getRecentMessages(contactJid, 20); // Obtenemos los últimos 20 mensajes para tener más contexto y el contactName.
-    const conversationText = formatMessagesForPrompt(conversationHistory.messages || []);
-
     const currentDateTime = getCurrentFormattedDateTime();
-    const formattedPrompt = `Contexto Adicional:\n- Fecha y hora de la solicitud del pedido: ${currentDateTime}\n\n--- Historial de Conversación ---\n${conversationText}`;
+    
+    // Solo enviamos a la IA el mensaje que contiene el pedido estructurado, no el historial entero.
+    // Esto asegura que extraiga exactamente el pedido actual y no uno antiguo flotando en el historial.
+    const formattedPrompt = `Contexto Adicional:\n- Fecha y hora actual del sistema: ${currentDateTime}\n\n--- Texto del Pedido ---\n${orderSummaryText}`;
 
     console.log(`[order.service] Enviando historial a IA para análisis de pedido.`);
     const analysisResult = await queryIAService('/analyze-order', formattedPrompt);
@@ -86,58 +87,41 @@ export const triggerOrderAnalysis = async (contactJid) => {
   }
 };
  
+import axios from 'axios';
+
 /**
- * Crea un nuevo documento de pedido en la base de datos.
+ * Crea un nuevo pedido directo en ERPNext a través del microservicio.
  * @param {Object} orderData - Los datos del pedido extraídos por la IA.
  */
 export const createOrder = async (orderData) => {
   try {
-    // Obtenemos el siguiente número de pedido secuencial
-    const numeroPedido = await getNextOrderNumber();
-
-    const orderDocumentData = { ...orderData };
-
-    // --- CORRECCIÓN CRÍTICA ---
-    // La IA devuelve la fecha como un string. Debemos convertirla a un objeto Date de JS
-    // para que MongoDB la guarde con el tipo de dato correcto (BSON Date) y así los
-    // filtros de fecha ($gte, $lt) funcionen correctamente.
-    if (orderDocumentData.fecha_hora_entrega && typeof orderDocumentData.fecha_hora_entrega === 'string') {
-      const dateObject = new Date(orderDocumentData.fecha_hora_entrega);
-      if (!isNaN(dateObject)) {
-        orderDocumentData.fecha_hora_entrega = dateObject;
-        console.log(`[order.service] 'fecha_hora_entrega' convertida a objeto Date: ${dateObject.toISOString()}`);
-      } else {
-        console.warn(`[order.service] 'fecha_hora_entrega' recibida no es un string de fecha válido: ${orderDocumentData.fecha_hora_entrega}`);
-      }
-    }
-
-    // --- INICIO DEBUG ---
     // Buscamos el nombre del contacto asociado a este JID.
     const contactName = await getChatByJid(orderData.remoteJid);
-    //console.log(`[order.service - DEBUG] Buscando nombre para ${orderData.remoteJid}.`);
-    //console.log(`[order.service - DEBUG] Nombre de contacto a guardar: "${contactName}"`);
-    // --- FIN DEBUG ---
 
-    const orderDocument = {
-      numero_pedido: numeroPedido, // Número de pedido secuencial para uso interno
-      ...orderDocumentData,
-      contactName: contactName, // Guardamos el nombre del contacto en el pedido
-      estado: 'confirmado_por_admin',
-      aprobado_por_cliente: false,
-      createdAt: new Date()
+    // Mantenemos la fecha tal cual la extrajo la IA en formato ISO string
+    const payload = {
+      remoteJid: orderData.remoteJid,
+      contactName: contactName || "Desconocido",
+      fecha_hora_entrega: orderData.fecha_hora_entrega,
+      productos: orderData.productos,
+      monto_total: parseInt(orderData.monto_total) || 0
     };
-    const savedOrder = await saveOrderToDb(orderDocument);
 
-    if (savedOrder) {
-      console.log('[order.service] Pedido guardado en la DB:', JSON.stringify(savedOrder, null, 2));
+    const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
+    console.log(`[order.service] Enviando pedido a ERP Service en ${erpServiceUrl}`);
+    
+    const response = await axios.post(`${erpServiceUrl}/api/orders`, payload);
+
+    if (response.data && response.data.success) {
+      console.log(`[order.service] Pedido creado en ERPNext con ID: ${response.data.order_name}`);
       // Actualizamos el estado de la conversación a 'Pedido Creado'
       await updateChatAnalysis(orderData.remoteJid, 'Pedido Creado');
       console.log(`[order.service] Estado de conversación para ${orderData.remoteJid} actualizado a 'Pedido Creado'.`);
     }
 
-    return savedOrder;
+    return response.data;
   } catch (error) {
-    console.error('[order.service] Error al crear el pedido:', error);
+    console.error('[order.service] Error al crear el pedido en ERPNext:', error.response?.data || error.message);
     return null;
   }
 };

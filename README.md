@@ -33,10 +33,9 @@ __Funciones principales:__
 - __getRecentMessages()__: Obtiene los últimos N mensajes de una conversación.
 - __updateChatAnalysis()__: Actualiza estado y resumen contextual de la conversación.
 - __getChatByJid()__: Obtiene el nombre del contacto por su JID.
-- __saveOrderToDb()__: Guarda pedidos en la colección 'pedidos'.
-- __getAllOrders()__: Obtiene todos los pedidos con posibilidad de filtrado y ordenamiento.
-- __getNextOrderNumber()__: Genera números de pedido secuenciales (contador persistente en colección `counters`).
-- __updateOrderStatusByNumber()__: Actualiza el estado de un pedido por su número.
+- __*(Obsoleto)* saveOrderToDb()__: Anteriormente guardaba pedidos en la colección 'pedidos'. (El sistema ahora interactúa directo con erp-service)
+- __*(Obsoleto)* getAllOrders()__: Utilizado para lecturas heredadas.
+- __*(Obsoleto)* updateOrderStatusByNumber()__: Reemplazado por integraciones nativas con ERP.
 
 #### 4. Procesador de Mensajes (services/message.processor.js)
 
@@ -56,8 +55,8 @@ __Funciones principales:__
 
 #### 7. Servicio de Pedidos (services/order.service.js)
 
-- Genera números de pedido secuenciales (iniciando en 297).
-- **Manejo de Fechas**: Convierte las fechas recibidas de la IA (strings) a objetos `Date` de JavaScript para asegurar que MongoDB las procese correctamente en filtros y ordenamiento.
+- Originalmente generaba números de pedido secuenciales (iniciando en 297). Actualmente, esta responsabilidad de nomenclatura se la ha delegado a **ERPNext** (ej: `SALES-ORD-XXX`).
+- **Manejo de Fechas**: Convierte las fechas recibidas de la IA (strings) a objetos `Date` de JavaScript para asimilarlas con los estándares de zona horaria local.
 - **Zona Horaria**: Utiliza `Etc/GMT+3` (UTC-3) para normalizar la fecha y hora de los pedidos independientemente de la ubicación del servidor.
 
 #### 8. Servicio de IA (services/ia.service.js)
@@ -67,20 +66,21 @@ __Funciones principales:__
 
 #### 9. Servicio ERP (erp-service)
 
-- Microservicio en Python (FastAPI) para integración con ERPNext. Ubicado en su propio directorio en la raíz del proyecto.
-- **Fase 1 (Lectura)**: Proveedor del endpoint para consultar pedidos activos (`Sales Orders` en estado `Submitted`) directo hacia ERPNext en reemplazo de MongoDB.
+- Microservicio en Python (FastAPI) para integración profunda con ERPNext. Mantenido en su propio directorio en la raíz del proyecto.
+- **Orquestador Central de Datos**: Interactúa directamente con ERPNext creando documentos (Sales Orders), cancelando pedidos con validación contable (`docstatus: 2`) y autogenerando Remitos (Delivery Notes) para marcar entregas. Reemplazó los antiguos flujos basados en colecciones de Mongo.
 - Configurable mediante variable de entorno `ERP_SERVICE_URL` (por defecto `http://localhost:8001`).
 
 #### 10. Manejador de Comandos (services/command.handler.js)
 
 - Sistema modular que asigna comandos a archivos específicos en `services/commands/`.
 - __Comandos disponibles__:
-  - `/listado`: Lista todos los pedidos confirmados.
-  - `/hoy`: Muestra pedidos con entrega para la fecha actual.
+  - `/listado`: Lista todos los pedidos confirmados consultando a ERPNext.
+  - `/hoy`: Muestra pedidos con entrega para la fecha actual (consulta local al `erp-service`).
   - `/manana`: Muestra pedidos con entrega para el día siguiente.
-  - `/hecho <numero>`: Marca un pedido como terminado (usa `completo.js`).
-  - `/reactivar <numero>`: Cambia el estado de un pedido terminado de vuelta a confirmado.
-  - `/erp`: Reservado para futura integración con ERPNext.
+  - `/hecho <ID_ERP>`: Marca un pedido como entregado (Genera Delivery Note en el ERP).
+  - `/cancelado <ID_ERP>`: Cancela un pedido en curso (`docstatus=2`), reportando sobre posibles bloqueos por pagos.
+  - `/reactivar <numero>`: *(Obsoleto/Legacy)* Reservado temporalmente para no romper flujos en MongoDB.
+  - `/erp`: Reservado para mantenimiento con ERPNext.
 
 ## Flujo de Trabajo
 
@@ -96,7 +96,7 @@ __Funciones principales:__
 1. Admin escribe "Entonces te agendo:" en el chat del cliente.
 2. El sistema detecta la frase, cancela cualquier análisis de estado pendiente.
 3. Solicita a la IA extraer los datos estructurados del pedido del historial reciente.
-4. Crea el documento en la colección `pedidos` con estado inicial `confirmado_por_admin`.
+4. Delega la solicitud a **`erp-service`**, el cual transfiere y crea el documento nativo (`Sales Order`) directamente en ERPNext, descartando Mongo como base primaria para pedidos en nuevos flujos.
 
 ## Herramientas de Prueba
 

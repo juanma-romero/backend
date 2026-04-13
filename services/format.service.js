@@ -49,13 +49,13 @@ export const formatOrdersForWhatsapp = (orders) => {
   return orders.map((order, index) => {
     try {
       const numeroPedido = order.numero_pedido || (index + 1);
-      console.log(`[Formatter] Procesando pedido #${numeroPedido}, ID: ${order._id}`);
+      console.log(`[Formatter] Procesando pedido #${numeroPedido}`);
       //console.log(order)
       // Verificación defensiva para productos
       if (!order.productos || !Array.isArray(order.productos)) {
-        console.warn(`[Formatter] El pedido ${order._id} no tiene un array de productos válido.`);
+        console.warn(`[Formatter] El pedido ${numeroPedido} no tiene un array de productos válido.`);
         return `---------
-Pedido #${numeroPedido} con datos incompletos (ID: ${order._id.toString().slice(-6)})`;
+Pedido #${numeroPedido} con datos incompletos`;
       }
 
       // Prepara el identificador del cliente, mostrando el nombre si está disponible.
@@ -77,9 +77,9 @@ ${productDetails}
 ${totalAmount}`;
     } catch (error) {
       const numeroPedido = order.numero_pedido || (index + 1);
-      console.error(`[Formatter] Error al procesar el pedido #${numeroPedido} con ID: ${order._id}`, error);
+      console.error(`[Formatter] Error al procesar el pedido #${numeroPedido}`, error);
       return `---------
-Error al procesar pedido #${numeroPedido} ID: ${order._id}`;
+Error al procesar pedido #${numeroPedido}`;
     }
   }).join('\n\n');
 };

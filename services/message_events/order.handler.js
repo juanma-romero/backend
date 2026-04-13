@@ -23,8 +23,8 @@ export const handleOrderTrigger = async (messageData, pendingAnalysisTimers) => 
       console.log(`[OrderHandler] Temporizador de análisis previo para ${contactJid} detenido.`);
     }
 
-    // Llama a la función de análisis de pedido
-    await triggerOrderAnalysis(contactJid);
+    // Llama a la función de análisis de pedido pasándole el mensaje exacto
+    await triggerOrderAnalysis(contactJid, textContent);
 
     return true; // Indicamos que este manejador se hizo cargo del mensaje.
   }
