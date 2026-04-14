@@ -1,5 +1,5 @@
 // services/commands/reactivar.js
-import { updateOrderStatusByNumber } from '../mongo.service.js';
+import { updateOrderStatusByNumber } from '../../mongo.service.js';
 
 /**
  * Ejecuta el comando para reactivar un pedido cambiando su estado de 'terminado' a 'confirmado_por_admin'.

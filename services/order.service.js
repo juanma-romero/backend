@@ -52,11 +52,12 @@ const getCurrentFormattedDateTime = () => {
 
 /**
  * Dispara el análisis del resumen del pedido que tipeó el administrador.
- * Se llama cuando se detecta el comando "Entonces te agendo:".
+ * Se llama cuando se detecta "Entonces te agendo:" o "Modifico tu pedido:".
  * @param {string} contactJid - El ID del contacto del chat.
  * @param {string} orderSummaryText - El texto exacto que escribió el admin.
+ * @param {string} action - 'create' o 'replace'. Define cómo se enviará al ERP.
  */
-export const triggerOrderAnalysis = async (contactJid, orderSummaryText) => {
+export const triggerOrderAnalysis = async (contactJid, orderSummaryText, action = 'create') => {
   try {
     const currentDateTime = getCurrentFormattedDateTime();
     
@@ -68,22 +69,57 @@ export const triggerOrderAnalysis = async (contactJid, orderSummaryText) => {
     const analysisResult = await queryIAService('/analyze-order', formattedPrompt);
 
     if (analysisResult && analysisResult.pedido_detectado) {
-      console.log("[order.service] Pedido detectado. Creando orden...");
+      console.log(`[order.service] Pedido detectado. Acción destinada: ${action}...`);
       const newOrder = {
         remoteJid: contactJid,
-        ...analysisResult // Copiamos toda la info extraída
+        ...analysisResult 
       };
       
-      await createOrder(newOrder);       
-
-      // Aquí podrías agregar la lógica para enviar una respuesta de confirmación a WhatsApp.
-      // Ejemplo: sendMessage(contactJid, `Pedido agendado: ${JSON.stringify(newOrder.productos)}`);
+      if (action === 'create') {
+          await createOrder(newOrder);       
+      } else if (action === 'replace') {
+          await replaceOrder(newOrder);
+      }
 
     } else {
       console.warn("[order.service] El servicio de IA no detectó un pedido formal.");
     }
   } catch (error) {
     console.error('[order.service] Error en el análisis de pedido:', error);
+  }
+};
+
+/**
+ * Reemplaza un pedido pendiente existente directo en ERPNext a través del microservicio.
+ * @param {Object} orderData - Los datos del nuevo pedido extraído.
+ */
+export const replaceOrder = async (orderData) => {
+  try {
+    const contactName = await getChatByJid(orderData.remoteJid);
+
+    const payload = {
+      remoteJid: orderData.remoteJid,
+      contactName: contactName || "Desconocido",
+      fecha_hora_entrega: orderData.fecha_hora_entrega,
+      productos: orderData.productos,
+      monto_total: parseInt(orderData.monto_total) || 0
+    };
+
+    const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
+    console.log(`[order.service] Solicitando REEMPLAZO de pedido al ERP en ${erpServiceUrl}`);
+    
+    const response = await axios.post(`${erpServiceUrl}/api/orders/replace_latest`, payload);
+
+    if (response.data && response.data.success) {
+      console.log(`[order.service] Reemplazo listo. Vieja: ${response.data.cancelled_order}, Nueva: ${response.data.order_name}`);
+      // Actualizamos estatus semántico.
+      await updateChatAnalysis(orderData.remoteJid, 'Pedido Modificado');
+    }
+
+    return response.data;
+  } catch (error) {
+    console.error('[order.service] Error al reemplazar el pedido en ERPNext:', error.response?.data || error.message);
+    return null;
   }
 };
  

@@ -1,6 +1,6 @@
 // services/commands/listado.js
 import axios from 'axios';
-import { formatOrdersForWhatsapp } from '../format.service.js';
+import { formatOrdersForWhatsapp } from '../../format.service.js';
 
 /**
  * Ejecuta el comando para listar todos los pedidos.

@@ -23,10 +23,23 @@ export const handleOrderTrigger = async (messageData, pendingAnalysisTimers) => 
       console.log(`[OrderHandler] Temporizador de análisis previo para ${contactJid} detenido.`);
     }
 
-    // Llama a la función de análisis de pedido pasándole el mensaje exacto
-    await triggerOrderAnalysis(contactJid, textContent);
+    // Llama a la función de análisis pasándole el mensaje y la acción 'create'
+    await triggerOrderAnalysis(contactJid, textContent, 'create');
+    return true; 
+  }
 
-    return true; // Indicamos que este manejador se hizo cargo del mensaje.
+  if (isFromMe && textContent.startsWith('Modifico tu pedido:')) {
+    console.log(`[OrderHandler] Comando de modificar detectado. Disparando análisis para reemplazo.`);
+
+    // Mismo control de temporizadores
+    if (pendingAnalysisTimers.has(contactJid)) {
+      clearTimeout(pendingAnalysisTimers.get(contactJid));
+      pendingAnalysisTimers.delete(contactJid);
+      console.log(`[OrderHandler] Temporizador de análisis detenido por reemplazo.`);
+    }
+
+    await triggerOrderAnalysis(contactJid, textContent, 'replace');
+    return true;
   }
 
   return false; // No era un mensaje para agendar.

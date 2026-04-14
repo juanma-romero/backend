@@ -1,7 +1,7 @@
 // services/commands/hoy.js
 import axios from 'axios';
-import { getStartOfDayInTimezone } from '../date.service.js';
-import { formatOrdersForWhatsapp } from '../format.service.js';
+import { getStartOfDayInTimezone } from '../../date.service.js';
+import { formatOrdersForWhatsapp } from '../../format.service.js';
 
 /**
  * Ejecuta el comando para listar los pedidos agendados para hoy.
