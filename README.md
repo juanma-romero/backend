@@ -1,161 +1,259 @@
-# Documentación Técnica del Sistema de Gestión de WhatsApp Business
+# Documentación Técnica del Backend (Orquestador WhatsApp)
 
 ## Descripción General
 
-El sistema es una plataforma de gestión de pedidos a través de WhatsApp que integra múltiples componentes para automatizar el proceso de atención al cliente, análisis de conversaciones y gestión de pedidos. 
+El **backend** es el orquestador central del sistema Voraz. Recibe todos los mensajes entrantes de WhatsApp a través del servidor Baileys (`dashwhat2`), los clasifica según su origen (cliente o administrador), y coordina las acciones correspondientes: análisis de IA, gestión de pedidos en ERPNext, y respuestas automáticas.
+
+---
 
 ## Arquitectura del Sistema
 
 ### Componentes Principales
 
-#### 1. Servidor Principal (index.js)
+#### 1. Servidor Principal (`index.js`)
 
-- __Framework__: Express.js
-- __Puerto__: Configurable, por defecto 3000
-- __Inicialización__: Conecta a MongoDB e inyecta las dependencias (colección y cliente) en los servicios mediante setters (`setCollection`, `setDbClient`), asegurando que los servicios tengan acceso a la base de datos sin importar el ciclo de vida del servidor.
+- **Framework**: Express.js
+- **Puerto**: Configurable, por defecto `3000`.
+- **Inicialización**: Conecta a MongoDB e inyecta las dependencias (colección y cliente) en los servicios mediante setters (`setCollection`, `setDbClient`). MongoDB actualmente se usa **solo** para el historial de conversaciones (`chatsV2`). Los pedidos viven en ERPNext.
 
-#### 2. Rutas (routes/messages.routes.js)
+---
 
-El sistema expone un endpoint unificado para procesar tanto mensajes de clientes como acciones de administradores:
+#### 2. Rutas (`routes/messages.routes.js`)
 
-__Endpoint: POST /api/messages__
+Expone el endpoint principal que recibe todos los mensajes de Baileys:
 
-- **Detección de Origen**: Identifica si el mensaje proviene de un administrador consultando `admin-phones.json`.
-- **Procesamiento de Comandos**: Si el remitente es admin y el contenido inicia con `/`, se ejecuta la lógica de `command.handler.js`.
-- **Flujo de Cliente**: Si es un mensaje de cliente, se guarda inmediatamente en MongoDB y se delega al `message.processor.js` para análisis de IA.
-- **Intercepción de Admin**: Detecta frases clave del admin en chats con clientes (ej: "Entonces te agendo:") para disparar flujos específicos como el de creación de pedidos.
+**`POST /api/messages`**
 
-#### 3. Servicio de MongoDB (services/mongo.service.js)
+El router distingue dos tipos de origen:
 
-__Funciones principales:__
+| Origen | Condición | Acción |
+|--------|-----------|--------|
+| **Admin (chat propio)** | `remoteJid` está en `admin-phones.json` y texto empieza con `/` | Ejecutar comando con `command.handler.js` y devolver `{ reply, targetJid }` a Baileys |
+| **Admin (chat de cliente)** | `fromMe: true` y texto empieza con frase clave | Disparar flujo de pedido (crear / modificar) |
+| **Cliente** | Cualquier otro `remoteJid` | Guardar en MongoDB y procesar con `message.processor.js` |
 
-- __saveMessage()__: Guarda mensajes en la colección 'chatsV2' organizados por contacto (remoteJid).
-- __getRecentMessages()__: Obtiene los últimos N mensajes de una conversación.
-- __updateChatAnalysis()__: Actualiza estado y resumen contextual de la conversación.
-- __getChatByJid()__: Obtiene el nombre del contacto por su JID.
-- __*(Obsoleto)* saveOrderToDb()__: Anteriormente guardaba pedidos en la colección 'pedidos'. (El sistema ahora interactúa directo con erp-service)
-- __*(Obsoleto)* getAllOrders()__: Utilizado para lecturas heredadas.
-- __*(Obsoleto)* updateOrderStatusByNumber()__: Reemplazado por integraciones nativas con ERP.
+> **Importante:** La distinción entre *"chat del admin consigo mismo"* y *"admin hablando dentro de un chat de cliente"* es fundamental. Los comandos `/` solo se procesan en el primer caso. Las frases de agendamiento solo se detectan en el segundo.
 
-#### 4. Procesador de Mensajes (services/message.processor.js)
+---
 
-- Coordina el procesamiento de mensajes entrantes.
-- Gestiona temporizadores para análisis diferido de conversaciones (60 segundos de "tiempo de calma").
-- Prioriza el manejo de eventos de agendamiento sobre el análisis de estado general.
+#### 3. Servicio de MongoDB (`services/mongo.service.js`)
 
-#### 5. Manejadores de Eventos (services/message_events/)
+Actualmente usado **exclusivamente para mensajería**. Las funciones de pedidos están marcadas como obsoletas.
 
-- __order.handler.js__: Detecta el comando textual "Entonces te agendo:" enviado por un administrador en el chat de un cliente.
-- __analysis.handler.js__: Implementa el sistema de espera antes de enviar la conversación a la IA para evitar análisis parciales mientras el cliente sigue escribiendo.
+**Funciones activas:**
+- `saveMessage()` — Guarda mensajes en `chatsV2` por contacto (`remoteJid`).
+- `getRecentMessages()` — Obtiene los últimos N mensajes de una conversación.
+- `updateChatAnalysis()` — Actualiza el estado semántico de la conversación (ej: `'Pedido Creado'`).
+- `getChatByJid()` — Obtiene el nombre de un contacto por su JID.
 
-#### 6. Servicio de Análisis (services/analysis.service.js)
+**Funciones obsoletas (legacy):**
+- ~~`saveOrderToDb()`~~ — Los pedidos ahora se crean directo en ERPNext vía `erp-service`.
+- ~~`getAllOrders()`~~ — Reemplazado por consultas al `erp-service`.
+- ~~`getNextOrderNumber()`~~ — La nomenclatura la genera ERPNext (`SALES-ORD-XXX`).
+- ~~`updateOrderStatusByNumber()`~~ — Reemplazado por integraciones nativas con ERPNext.
 
-- Obtiene el historial reciente para dar contexto a la IA.
-- Detecta automáticamente si la conversación ha derivado en un pedido o solo requiere actualización de estado.
+---
 
-#### 7. Servicio de Pedidos (services/order.service.js)
+#### 4. Procesador de Mensajes (`services/message.processor.js`)
 
-- Originalmente generaba números de pedido secuenciales (iniciando en 297). Actualmente, esta responsabilidad de nomenclatura se la ha delegado a **ERPNext** (ej: `SALES-ORD-XXX`).
-- **Manejo de Fechas**: Convierte las fechas recibidas de la IA (strings) a objetos `Date` de JavaScript para asimilarlas con los estándares de zona horaria local.
-- **Zona Horaria**: Utiliza `Etc/GMT+3` (UTC-3) para normalizar la fecha y hora de los pedidos independientemente de la ubicación del servidor.
+Coordina el procesamiento de mensajes de clientes. Delega a los manejadores de eventos en orden de prioridad:
 
-#### 8. Servicio de IA (services/ia.service.js)
+1. **`handleOrderTrigger`** — Verifica si el mensaje activa un flujo de pedido. Si lo hace, lo procesa y no continúa.
+2. **`handleConversationAnalysis`** — Si no fue un pedido, inicia el temporizador de análisis de IA (60 segundos de "tiempo de calma").
 
-- Interfaz para comunicación con servidor FastAPI.
-- Configurable mediante variable de entorno `IA_SERVICE_URL`.
+---
 
-#### 9. Servicio ERP (erp-service)
+#### 5. Manejadores de Eventos (`services/message_events/`)
 
-- Microservicio en Python (FastAPI) para integración profunda con ERPNext. Mantenido en su propio directorio en la raíz del proyecto.
-- **Orquestador Central de Datos**: Interactúa directamente con ERPNext creando documentos (Sales Orders), cancelando pedidos con validación contable (`docstatus: 2`) y autogenerando Remitos (Delivery Notes) para marcar entregas. Reemplazó los antiguos flujos basados en colecciones de Mongo.
-- Configurable mediante variable de entorno `ERP_SERVICE_URL` (por defecto `http://localhost:8001`).
+- **`order.handler.js`**: Detecta frases clave enviadas por el admin dentro de chats de clientes:
+  - `"Entonces te agendo:"` → dispara `triggerOrderAnalysis(contactJid, texto, 'create')`
+  - `"Modifico tu pedido:"` → dispara `triggerOrderAnalysis(contactJid, texto, 'replace')`
+- **`analysis.handler.js`**: Gestiona el temporizador diferido de análisis de conversación. Reinicia el reloj ante cada mensaje nuevo del mismo contacto.
 
-#### 10. Manejador de Comandos (services/command.handler.js)
+---
 
-- Sistema modular que asigna comandos a archivos específicos en `services/commands/`.
-- __Comandos disponibles__:
-  - `/listado`: Lista todos los pedidos confirmados consultando a ERPNext.
-  - `/hoy`: Muestra pedidos con entrega para la fecha actual (consulta local al `erp-service`).
-  - `/manana`: Muestra pedidos con entrega para el día siguiente.
-  - `/hecho <ID_ERP>`: Marca un pedido como entregado (Genera Delivery Note en el ERP).
-  - `/cancelado <ID_ERP>`: Cancela un pedido en curso (`docstatus=2`), reportando sobre posibles bloqueos por pagos.
-  - `/reactivar <numero>`: *(Obsoleto/Legacy)* Reservado temporalmente para no romper flujos en MongoDB.
-  - `/erp`: Reservado para mantenimiento con ERPNext.
+#### 6. Servicio de Análisis (`services/analysis.service.js`)
 
-## Flujo de Trabajo
+- Obtiene el historial reciente de la conversación para contextualizar a la IA.
+- Detecta automáticamente si la conversación requiere actualización de estado o ya derivó en un pedido.
 
-### Flujo de Mensajes de Clientes
+---
 
-1. Cliente envía mensaje → `/api/messages`.
-2. Persistencia inmediata en `chatsV2`.
-3. Inicio de temporizador de 60s. Si llega otro mensaje del mismo JID, el reloj se reinicia.
-4. Al expirar el tiempo, la IA analiza la conversación.
+#### 7. Servicio de Pedidos (`services/order.service.js`)
 
-### Flujo de Agendamiento de Pedidos
+Orquesta la creación, modificación y notificación de pedidos.
 
-1. Admin escribe "Entonces te agendo:" en el chat del cliente.
-2. El sistema detecta la frase, cancela cualquier análisis de estado pendiente.
-3. Solicita a la IA extraer los datos estructurados del pedido del historial reciente.
-4. Delega la solicitud a **`erp-service`**, el cual transfiere y crea el documento nativo (`Sales Order`) directamente en ERPNext, descartando Mongo como base primaria para pedidos en nuevos flujos.
+**Funciones principales:**
+
+- **`triggerOrderAnalysis(jid, texto, action)`** — Construye el prompt con fecha/hora local para la IA y según el `action` invoca `createOrder` o `replaceOrder`.
+- **`createOrder(orderData)`** — Envía el pedido al `erp-service` (`POST /api/orders`). Ante éxito, actualiza el estado de la conversación en Mongo y **envía notificación al admin por WhatsApp**.
+- **`replaceOrder(orderData)`** — Envía la solicitud de reemplazo al `erp-service` (`POST /api/orders/replace_latest`). Internamente, el microservicio cancela el último pedido activo del cliente y crea el nuevo. También **notifica al admin**.
+- **`notifyAdmin(message)`** — Función interna que llama al endpoint `POST /send-message` de Baileys (`dashwhat2`) para enviar un mensaje proactivo al número admin configurado.
+
+**Zona horaria**: Usa `Etc/GMT+3` (UTC-3 fijo) para evitar variaciones estacionales al construir el prompt de fecha/hora.
+
+---
+
+#### 8. Servicio de IA (`services/ia.service.js`)
+
+- Interfaz HTTP para comunicación con el microservicio `ia-service` (FastAPI + Groq/Gemini).
+- Configurable mediante `IA_SERVICE_URL`.
+- Llama a endpoints específicos como `/analyze-order` o `/analyze-conversation`.
+
+---
+
+#### 9. Servicio ERP (`erp-service`)
+
+Microservicio externo en Python (FastAPI) ubicado en `/erp-service/` en la raíz del proyecto. Ver su propia documentación para detalles internos.
+
+- **Orquestador de Pedidos ERPNext**: Crea `Sales Orders`, genera `Delivery Notes` (para `/hecho`), busca y cancela órdenes activas (para `/cancelado` y `Modifico tu pedido:`).
+- Configurable mediante `ERP_SERVICE_URL` (por defecto `http://localhost:8001`).
+
+---
+
+#### 10. Manejador de Comandos (`services/command.handler.js`)
+
+Sistema de **carga dinámica de comandos por directorio**. Al iniciar, recorre `services/commands/` buscando subcarpetas y registra automáticamente cada `.js` como un comando. No requiere edición manual al añadir comandos nuevos.
+
+**Estructura de directorios de comandos:**
+
+```
+services/commands/
+├── pedidos/          ← Activo
+│   ├── listado.js
+│   ├── hoy.js
+│   ├── manana.js
+│   ├── hecho.js
+│   ├── cancelado.js
+│   └── reactivar.js  (Legacy/Obsoleto)
+├── egresos/          ← Planificado (vacío)
+├── informes/         ← Planificado (vacío)
+├── ingresos/         ← Planificado (vacío)
+└── inventario/       ← Planificado (vacío)
+```
+
+**Comandos activos (`pedidos/`):**
+
+| Comando | Descripción |
+|---------|-------------|
+| `/listado` | Lista todos los pedidos activos consultando ERPNext. |
+| `/hoy` | Pedidos con entrega para la fecha actual (filtra por `delivery_date` en ERP). |
+| `/manana` | Pedidos con entrega para el día siguiente. |
+| `/hecho <ID_ERP>` | Marca un pedido como entregado generando un Delivery Note en ERPNext. |
+| `/cancelado <ID_ERP>` | Cancela un pedido (`docstatus=2`). Reporta si hay bloqueos contables. |
+| `/reactivar <numero>` | *(Legacy)* No usar. Pendiente de migración o eliminación. |
+
+---
+
+## Flujos de Trabajo
+
+### Flujo 1: Mensaje de Cliente
+
+```
+Cliente → Baileys → POST /api/messages
+  └── Guardar en MongoDB (chatsV2)
+  └── processMessage()
+        ├── [60s timer] handleConversationAnalysis → ia-service /analyze-conversation
+        └── [si admin escribe frase clave] handleOrderTrigger
+```
+
+### Flujo 2: Agendamiento de Pedido ("Entonces te agendo:")
+
+```
+Admin escribe en chat de cliente → Baileys → POST /api/messages
+  └── handleOrderTrigger detecta la frase
+  └── triggerOrderAnalysis(jid, texto, 'create')
+        └── ia-service /analyze-order → extrae JSON del pedido
+        └── createOrder() → erp-service POST /api/orders → ERPNext crea Sales Order
+        └── updateChatAnalysis() → MongoDB actualiza estado conversación
+        └── notifyAdmin() → Baileys POST /send-message → Admin recibe confirmación WA
+```
+
+### Flujo 3: Modificación de Pedido ("Modifico tu pedido:")
+
+```
+Admin escribe en chat de cliente → Baileys → POST /api/messages
+  └── handleOrderTrigger detecta la frase
+  └── triggerOrderAnalysis(jid, texto, 'replace')
+        └── ia-service /analyze-order → extrae JSON del nuevo pedido
+        └── replaceOrder() → erp-service POST /api/orders/replace_latest
+              ├── Cancela último pedido activo del cliente en ERPNext
+              └── Crea nuevo Sales Order
+        └── updateChatAnalysis() → MongoDB actualiza estado
+        └── notifyAdmin() → Admin recibe confirmación con orden vieja y nueva
+```
+
+### Flujo 4: Comando de Admin
+
+```
+Admin escribe /hoy → Baileys → POST /api/messages
+  └── handleAdminCommand('hoy')
+  └── commands['hoy'].execute([])
+  └── return { reply: "...", targetJid: adminJid }
+  └── Baileys recibe reply y llama a sock.sendMessage()
+```
+
+---
 
 ## Herramientas de Prueba
 
 ### Simulador de Mensajes
-El proyecto incluye un simulador HTML para probar la lógica de recepción de mensajes y creación de pedidos sin necesidad de enviar mensajes reales por WhatsApp.
+
+El proyecto incluye un simulador HTML para probar la lógica sin enviar mensajes reales por WhatsApp.
 
 - **Ubicación**: `tests/message_simulator.html`
-- **Uso**: 
-  1. Ejecutar un servidor estático en la carpeta `tests` (ej: `npx serve -l 5000 tests`).
-  2. Abrir en el navegador: `http://localhost:5000/message_simulator.html`.
-  3. Configurar el JID del contacto y el contenido del mensaje para simular la interacción.
+- **Uso**:
+  1. Ejecutar servidor estático: `npx serve -l 5000 tests`
+  2. Abrir: `http://localhost:5000/message_simulator.html`
+  3. Configurar el JID del contacto y el contenido del mensaje.
+
+---
 
 ## Estructura de Datos
 
-### Colección 'chatsV2'
+### MongoDB: Colección `chatsV2`
 
 ```javascript
 {
   _id: ObjectId,
-  contactJid: string,           // Identificador único del contacto
+  contactJid: string,           // JID único del contacto (ej: 595981234567@s.whatsapp.net)
   contactName: string,          // Nombre del contacto (si disponible)
-  messages: [Message],          // Array de mensajes
-  stateConversation: string,    // Estado actual de la conversación
-  contextualSummary: string,    // Resumen contextual de la conversación
+  messages: [Message],          // Historial de mensajes
+  stateConversation: string,    // Estado semántico (ej: 'Pedido Creado', 'Pedido Modificado')
+  contextualSummary: string,    // Resumen generado por la IA
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-### Colección 'pedidos'
+> **Nota**: La colección `pedidos` de MongoDB está en desuso. Los pedidos se gestionan como `Sales Orders` nativos en ERPNext.
 
-```javascript
-{
-  _id: ObjectId,
-  numero_pedido: number,        // Número secuencial
-  remoteJid: string,            // Identificador del contacto
-  contactName: string,          // Nombre del cliente
-  productos: [Product],         // Array de productos
-  fecha_hora_entrega: Date,     // Fecha y hora de entrega (BSON Date)
-  monto_total: string,          // Monto total del pedido
-  estado: string,               // Estado (confirmado_por_admin, terminado, etc.)
-  aprobado_por_cliente: boolean,
-  createdAt: Date
-}
-```
+---
 
 ## Variables de Entorno
 
-- `MONGODB_URI`: Cadena de conexión a MongoDB.
-- `IA_SERVICE_URL`: URL del servicio de IA (FastAPI).
-- `PORT`: Puerto del servidor (por defecto 3000).
+| Variable | Descripción | Valor por defecto |
+|----------|-------------|-------------------|
+| `MONGODB_URI` | Cadena de conexión a MongoDB Atlas | — |
+| `PORT` | Puerto del servidor Express | `3000` |
+| `IA_SERVICE_URL` | URL del microservicio de IA | `http://localhost:8000` |
+| `ERP_SERVICE_URL` | URL del microservicio ERP | `http://localhost:8001` |
+| `DASHWHAT_URL` | URL del servidor Baileys (para notificaciones proactivas) | `http://localhost:8880` |
+| `ADMIN_NOTIFY_JID` | JID de WhatsApp del admin a notificar tras crear/modificar pedidos | — |
+
+---
 
 ## Consideraciones de Escalabilidad
 
-- Los temporizadores de "tiempo de calma" se gestionan en memoria (`Map`). En un entorno con múltiples instancias (Load Balancer), se recomienda migrar estos temporizadores a **Redis**.
+- Los temporizadores de "tiempo de calma" se gestionan en memoria (`Map`). En un entorno con múltiples instancias (Load Balancer), se recomienda migrar a **Redis**.
+- Las notificaciones al admin (`notifyAdmin`) fallan silenciosamente para no bloquear el flujo de creación de pedidos.
+
+---
 
 ## Posibles Mejoras
 
 1. Implementar autenticación para proteger el endpoint `/api/messages`.
-2. Migrar la gestión de estados de mensajes a Redis para escalabilidad horizontal.
-3. Finalizar la integración `/erp`.
-4. Implementar validaciones de esquema con Joi o Zod para los payloads de la IA.
+2. Migrar los temporizadores de análisis a Redis para escalabilidad horizontal.
+3. Implementar validaciones de esquema con **Joi** o **Zod** para los payloads recibidos de la IA.
+4. Eliminar formalmente el comando `/reactivar` y las funciones obsoletas de `mongo.service.js` una vez confirmado que no hay dependencias activas.
+5. Poblar las categorías de comandos planificadas: `egresos/`, `informes/`, `ingresos/`, `inventario/`.

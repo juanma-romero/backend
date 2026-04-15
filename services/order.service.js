@@ -111,9 +111,15 @@ export const replaceOrder = async (orderData) => {
     const response = await axios.post(`${erpServiceUrl}/api/orders/replace_latest`, payload);
 
     if (response.data && response.data.success) {
-      console.log(`[order.service] Reemplazo listo. Vieja: ${response.data.cancelled_order}, Nueva: ${response.data.order_name}`);
-      // Actualizamos estatus semántico.
+      const { order_name, cancelled_order } = response.data;
+      console.log(`[order.service] Reemplazo listo. Vieja: ${cancelled_order}, Nueva: ${order_name}`);
+
+      // Actualizar estado semántico
       await updateChatAnalysis(orderData.remoteJid, 'Pedido Modificado');
+
+      // Notificar al admin por WhatsApp
+      const notifyMsg = `♻️ Pedido MODIFICADO en ERPNext\n📋 Orden nueva: ${order_name}\n❌ Orden cancelada: ${cancelled_order || 'ninguna'}\n👤 Cliente: ${payload.contactName}`;
+      await notifyAdmin(notifyMsg);
     }
 
     return response.data;
@@ -124,6 +130,28 @@ export const replaceOrder = async (orderData) => {
 };
  
 import axios from 'axios';
+
+/**
+ * Envía una notificación proactiva al número de admin en WhatsApp.
+ * @param {string} message - El texto a enviar.
+ */
+const notifyAdmin = async (message) => {
+  const dashUrl = process.env.DASHWHAT_URL || 'http://localhost:8880';
+  const adminJid = process.env.ADMIN_NOTIFY_JID;
+
+  if (!adminJid) {
+    console.warn('[order.service] ADMIN_NOTIFY_JID no está definido. No se envió la notificación al admin.');
+    return;
+  }
+
+  try {
+    await axios.post(`${dashUrl}/send-message`, { jid: adminJid, message });
+    console.log(`[order.service] Notificación enviada al admin (${adminJid}).`);
+  } catch (err) {
+    // Loguear el error pero no bloquear el flujo principal
+    console.error('[order.service] Error al notificar al admin por WhatsApp:', err.message);
+  }
+};
 
 /**
  * Crea un nuevo pedido directo en ERPNext a través del microservicio.
@@ -149,10 +177,16 @@ export const createOrder = async (orderData) => {
     const response = await axios.post(`${erpServiceUrl}/api/orders`, payload);
 
     if (response.data && response.data.success) {
-      console.log(`[order.service] Pedido creado en ERPNext con ID: ${response.data.order_name}`);
-      // Actualizamos el estado de la conversación a 'Pedido Creado'
+      const orderName = response.data.order_name;
+      console.log(`[order.service] Pedido creado en ERPNext con ID: ${orderName}`);
+
+      // Actualizar el estado de la conversación
       await updateChatAnalysis(orderData.remoteJid, 'Pedido Creado');
       console.log(`[order.service] Estado de conversación para ${orderData.remoteJid} actualizado a 'Pedido Creado'.`);
+
+      // Notificar al admin por WhatsApp
+      const notifyMsg = `✅ Pedido creado en ERPNext\n📋 Orden: ${orderName}\n👤 Cliente: ${payload.contactName}`;
+      await notifyAdmin(notifyMsg);
     }
 
     return response.data;

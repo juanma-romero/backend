@@ -62,7 +62,22 @@ Pedido #${numeroPedido} con datos incompletos`;
       const clientNumber = order.remoteJid ? order.remoteJid.split('@')[0] : 'Desconocido'; // Se declara una sola vez
       const clientIdentifier = order.contactName ? `${order.contactName} (${clientNumber})` : clientNumber;
 
-      const deliveryInfo = order.fecha_hora_entrega ? formatDateForDisplay(new Date(order.fecha_hora_entrega)) : 'Entrega no especificada';
+      // ERPNext devuelve el datetime sin timezone (ej: "2026-04-15 16:00:00"), 
+      // que ya está en hora local de Paraguay (UTC-3). 
+      // Al parsearlo con new Date() directamente, JS lo interpreta como UTC y resta 3h.
+      // Solución: anclar el string a -03:00 antes de parsear.
+      const parseErpDate = (rawDate) => {
+        if (!rawDate) return null;
+        // Si ya tiene info de timezone (contiene + o Z), parsearlo directo
+        if (rawDate.includes('Z') || rawDate.includes('+') || rawDate.match(/-\d{2}:\d{2}$/)) {
+          return new Date(rawDate);
+        }
+        // Si no, asumir que viene en hora local Paraguay (UTC-3) y anclar
+        const isoString = rawDate.replace(' ', 'T') + '-03:00';
+        return new Date(isoString);
+      };
+
+      const deliveryInfo = order.fecha_hora_entrega ? formatDateForDisplay(parseErpDate(order.fecha_hora_entrega)) : 'Entrega no especificada';
 
       const productDetails = order.productos
         .map(p => `${p.cantidad || '?'} ${p.nombre || 'Producto sin nombre'}`)
