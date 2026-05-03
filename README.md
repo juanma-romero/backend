@@ -136,6 +136,7 @@ services/commands/
 
 | Comando | Descripción |
 |---------|-------------|
+| `/agendar <número> <detalle>` | Genera un pedido en ERPNext directo desde el chat admin. Formatea automáticamente el número copiado (ej: `+595 971 166266`). Alias: `/pedido`, `/crear`. |
 | `/listado` | Lista todos los pedidos activos consultando ERPNext. |
 | `/hoy` | Pedidos con entrega para la fecha actual (filtra por `delivery_date` en ERP). |
 | `/manana` | Pedidos con entrega para el día siguiente. |
@@ -169,7 +170,20 @@ Admin escribe en chat de cliente → Baileys → POST /api/messages
         └── notifyAdmin() → Baileys POST /send-message → Admin recibe confirmación WA
 ```
 
-### Flujo 3: Modificación de Pedido ("Modifico tu pedido:")
+### Flujo 3: Agendamiento Directo de Admin (`/agendar`)
+
+```
+Admin escribe `/agendar +595 972 860099 1 combo...` → Baileys → POST /api/messages
+  └── handleAdminCommand('agendar')
+  └── el comando extrae, limpia el número y forma el JID
+  └── triggerOrderAnalysis(jid, texto, 'create')
+        └── ia-service /analyze-order → extrae JSON del pedido (manteniendo decimales con punto)
+        └── createOrder() → erp-service POST /api/orders → ERPNext crea Sales Order
+              └── Nota: Busca en Mongo si el cliente ya interactuó para usar su nombre, sino usa "Desconocido".
+        └── notifyAdmin() → Admin recibe confirmación WA
+```
+
+### Flujo 4: Modificación de Pedido ("Modifico tu pedido:")
 
 ```
 Admin escribe en chat de cliente → Baileys → POST /api/messages
@@ -183,7 +197,7 @@ Admin escribe en chat de cliente → Baileys → POST /api/messages
         └── notifyAdmin() → Admin recibe confirmación con orden vieja y nueva
 ```
 
-### Flujo 4: Comando de Admin
+### Flujo 5: Comando de Admin
 
 ```
 Admin escribe /hoy → Baileys → POST /api/messages
