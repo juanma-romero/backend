@@ -33,7 +33,7 @@ const formatDateForDisplay = (date) => {
   // Obtener el offset de zona horaria
   const timeZoneOffset = date.toLocaleString('es-ES', { timeZone, timeZoneName: 'short' }).split(' ').pop();
 
-  return `${dayOfWeek} ${dateParts.day}-${dateParts.month} ${dateParts.hour}:${dateParts.minute} [${timeZoneOffset}]`;
+  return `${dateParts.day}-${dateParts.month} ${dayOfWeek} ${dateParts.hour}:${dateParts.minute}`;
 };
 
 /**
@@ -60,7 +60,7 @@ Pedido #${numeroPedido} con datos incompletos`;
 
       // Prepara el identificador del cliente, mostrando el nombre si está disponible.
       const clientNumber = order.remoteJid ? order.remoteJid.split('@')[0] : 'Desconocido'; // Se declara una sola vez
-      const clientIdentifier = order.contactName ? `${order.contactName} (${clientNumber})` : clientNumber;
+      const clientIdentifier = order.contactName ? `${order.contactName} ` : clientNumber;
 
       // ERPNext devuelve el datetime sin timezone (ej: "2026-04-15 16:00:00"), 
       // que ya está en hora local de Paraguay (UTC-3). 
@@ -109,7 +109,7 @@ export const getMessageText = (messageData) => {
   // Fallback por si usamos el formato viejo en algún simulador sin actualizar:
   if (messageData.content && typeof messageData.content === 'string') return messageData.content;
   if (!messageData.message) return '';
-  
+
   const msg = messageData.message;
   if (typeof msg === 'string') return msg;
   if (msg.conversation) return msg.conversation;
