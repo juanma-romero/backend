@@ -31,7 +31,7 @@ const getCurrentFormattedDateTime = () => {
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
-        month: '2-digit',
+        month: 'long', // Usamos el nombre del mes para evitar ambigüedad (04/05 vs 05/04)
         year: 'numeric',                
         hour12: false,
         timeZone: timeZone,
@@ -47,7 +47,7 @@ const getCurrentFormattedDateTime = () => {
 
     const dayOfWeek = dateParts.weekday.charAt(0).toUpperCase() + dateParts.weekday.slice(1);
 
-    return `${dayOfWeek}, ${dateParts.day}-${dateParts.month}-${dateParts.year} ${dateParts.hour}:${dateParts.minute}`;
+    return `${dayOfWeek}, ${dateParts.day} de ${dateParts.month} de ${dateParts.year} a las ${dateParts.hour}:${dateParts.minute}`;
 };
 
 /**
