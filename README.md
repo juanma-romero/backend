@@ -125,7 +125,6 @@ services/commands/
 │   ├── manana.js
 │   ├── hecho.js
 │   ├── cancelado.js
-│   └── reactivar.js  (Legacy/Obsoleto)
 ├── egresos/          ← Planificado (vacío)
 ├── informes/         ← Planificado (vacío)
 ├── ingresos/         ← Planificado (vacío)
@@ -142,7 +141,6 @@ services/commands/
 | `/manana` | Pedidos con entrega para el día siguiente. |
 | `/hecho <ID_ERP>` | Marca un pedido como entregado generando un Delivery Note en ERPNext. |
 | `/cancelado <ID_ERP>` | Cancela un pedido (`docstatus=2`). Reporta si hay bloqueos contables. |
-| `/reactivar <numero>` | *(Legacy)* No usar. Pendiente de migración o eliminación. |
 
 ---
 
@@ -164,10 +162,13 @@ Cliente → Baileys → POST /api/messages
 Admin escribe en chat de cliente → Baileys → POST /api/messages
   └── handleOrderTrigger detecta la frase
   └── triggerOrderAnalysis(jid, texto, 'create')
-        └── ia-service /analyze-order → extrae JSON del pedido
-        └── createOrder() → erp-service POST /api/orders → ERPNext crea Sales Order
-        └── updateChatAnalysis() → MongoDB actualiza estado conversación
-        └── notifyAdmin() → Baileys POST /send-message → Admin recibe confirmación WA
+        └── recupera últimos 15 mensajes del chat para contexto
+        └── ia-service /analyze-order → extrae JSON del pedido y audita contra el historial
+        └── ¿Existe discrepancia?
+              ├── SÍ: Detiene flujo → notifyAdmin() alerta al admin por WhatsApp
+              └── NO: createOrder() → erp-service POST /api/orders → ERPNext crea Sales Order
+                    └── updateChatAnalysis() → MongoDB actualiza estado conversación
+                    └── notifyAdmin() → Baileys POST /send-message → Admin recibe confirmación WA
 ```
 
 ### Flujo 3: Agendamiento Directo de Admin (`/agendar`)

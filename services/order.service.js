@@ -1,5 +1,6 @@
 import { saveOrderToDb, getRecentMessages, updateChatAnalysis, getChatByJid, getNextOrderNumber } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
+import axios from 'axios';
 
 /**
  * Formatea los mensajes de la DB a un string simple para el prompt de la IA.
@@ -7,12 +8,12 @@ import { queryIAService } from './ia.service.js';
  * @returns {string} - El historial formateado.
  */
 const formatMessagesForPrompt = (messages) => {
-    return messages
-        .map(msg => {
-            const prefix = msg.role === 'user' ? 'Cliente:' : 'Admin:';
-            return `${prefix} ${msg.content || ''}`;
-        })
-        .join('\n');
+  return messages
+    .map(msg => {
+      const prefix = msg.role === 'user' ? 'Cliente:' : 'Admin:';
+      return `${prefix} ${msg.content || ''}`;
+    })
+    .join('\n');
 };
 
 /**
@@ -20,34 +21,34 @@ const formatMessagesForPrompt = (messages) => {
  * @returns {string} - La fecha y hora formateada.
  */
 const getCurrentFormattedDateTime = () => {
-    const now = new Date();
-    // Se usa 'Etc/GMT+3' para forzar un offset de UTC-3, ya que 'America/Asuncion'
-    // puede resolverse a UTC-4 en sistemas con datos de zona horaria desactualizados.
-    const timeZone = 'Etc/GMT+3';
+  const now = new Date();
+  // Se usa 'Etc/GMT+3' para forzar un offset de UTC-3, ya que 'America/Asuncion'
+  // puede resolverse a UTC-4 en sistemas con datos de zona horaria desactualizados.
+  const timeZone = 'Etc/GMT+3';
 
-    // Opciones para formatear la fecha y hora en la zona horaria correcta
-    const options = {
-        weekday: 'long',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        month: 'long', // Usamos el nombre del mes para evitar ambigüedad (04/05 vs 05/04)
-        year: 'numeric',                
-        hour12: false,
-        timeZone: timeZone,
-    };
+  // Opciones para formatear la fecha y hora en la zona horaria correcta
+  const options = {
+    weekday: 'long',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'long', // Usamos el nombre del mes para evitar ambigüedad (04/05 vs 05/04)
+    year: 'numeric',
+    hour12: false,
+    timeZone: timeZone,
+  };
 
-    const formatter = new Intl.DateTimeFormat('es-ES', options);
-    const parts = formatter.formatToParts(now);
+  const formatter = new Intl.DateTimeFormat('es-ES', options);
+  const parts = formatter.formatToParts(now);
 
-    const dateParts = parts.reduce((acc, part) => {
-        acc[part.type] = part.value;
-        return acc;
-    }, {});
+  const dateParts = parts.reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
 
-    const dayOfWeek = dateParts.weekday.charAt(0).toUpperCase() + dateParts.weekday.slice(1);
+  const dayOfWeek = dateParts.weekday.charAt(0).toUpperCase() + dateParts.weekday.slice(1);
 
-    return `${dayOfWeek}, ${dateParts.day} de ${dateParts.month} de ${dateParts.year} a las ${dateParts.hour}:${dateParts.minute}`;
+  return `${dayOfWeek}, ${dateParts.day} de ${dateParts.month} de ${dateParts.year} a las ${dateParts.hour}:${dateParts.minute}`;
 };
 
 /**
@@ -60,25 +61,38 @@ const getCurrentFormattedDateTime = () => {
 export const triggerOrderAnalysis = async (contactJid, orderSummaryText, action = 'create') => {
   try {
     const currentDateTime = getCurrentFormattedDateTime();
-    
-    // Solo enviamos a la IA el mensaje que contiene el pedido estructurado, no el historial entero.
-    // Esto asegura que extraiga exactamente el pedido actual y no uno antiguo flotando en el historial.
-    const formattedPrompt = `Contexto Adicional:\n- Fecha y hora actual del sistema: ${currentDateTime}\n\n--- Texto del Pedido ---\n${orderSummaryText}`;
 
-    console.log(`[order.service] Enviando historial a IA para análisis de pedido.`);
+    // Obtenemos los últimos 15 mensajes para contexto de auditoría
+    const { messages: recentMessages } = await getRecentMessages(contactJid, 15);
+    const historyText = formatMessagesForPrompt(recentMessages);
+
+    // Enviamos a la IA el pedido estructurado y el historial para validar que coincidan
+    const formattedPrompt = `Contexto Adicional:\n- Fecha y hora actual del sistema: ${currentDateTime}\n\n--- Historial Reciente ---\n${historyText}\n\n--- Texto del Pedido ---\n${orderSummaryText}`;
+
+    console.log(`[order.service] Enviando historial y pedido a IA para análisis y auditoría.`);
     const analysisResult = await queryIAService('/analyze-order', formattedPrompt);
 
     if (analysisResult && analysisResult.pedido_detectado) {
-      console.log(`[order.service] Pedido detectado. Acción destinada: ${action}...`);
+      // Verificamos si la IA detectó una discrepancia
+      if (analysisResult.discrepancia && analysisResult.discrepancia.detectada) {
+        console.warn(`[order.service] DISCREPANCIA DETECTADA: ${analysisResult.discrepancia.motivo}`);
+        
+        const notifyMsg = `⚠️ *ALERTA DE DISCREPANCIA*\n\nIntentaste agendar un pedido, pero noté un error:\n_${analysisResult.discrepancia.motivo}_\n\nPor favor, verifica el historial del cliente y vuelve a enviar el comando corregido.`;
+        await notifyAdmin(notifyMsg);
+        
+        return; // Detenemos el flujo, no creamos ni reemplazamos el pedido
+      }
+
+      console.log(`[order.service] Pedido detectado sin discrepancias. Acción destinada: ${action}...`);
       const newOrder = {
         remoteJid: contactJid,
-        ...analysisResult 
+        ...analysisResult
       };
-      
+
       if (action === 'create') {
-          await createOrder(newOrder);       
+        await createOrder(newOrder);
       } else if (action === 'replace') {
-          await replaceOrder(newOrder);
+        await replaceOrder(newOrder);
       }
 
     } else {
@@ -102,12 +116,12 @@ export const replaceOrder = async (orderData) => {
       contactName: contactName || "Desconocido",
       fecha_hora_entrega: orderData.fecha_hora_entrega,
       productos: orderData.productos,
-      monto_total: parseInt(orderData.monto_total) || 0
+      //monto_total: parseInt(orderData.monto_total) || 0
     };
 
     const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
     console.log(`[order.service] Solicitando REEMPLAZO de pedido al ERP en ${erpServiceUrl}`);
-    
+
     const response = await axios.post(`${erpServiceUrl}/api/orders/replace_latest`, payload);
 
     if (response.data && response.data.success) {
@@ -128,14 +142,12 @@ export const replaceOrder = async (orderData) => {
     return null;
   }
 };
- 
-import axios from 'axios';
 
 /**
  * Envía una notificación proactiva al número de admin en WhatsApp.
  * @param {string} message - El texto a enviar.
  */
-const notifyAdmin = async (message) => {
+async function notifyAdmin(message) {
   const dashUrl = process.env.DASHWHAT_URL || 'http://localhost:8880';
   const adminJid = process.env.ADMIN_NOTIFY_JID;
 
@@ -151,7 +163,7 @@ const notifyAdmin = async (message) => {
     // Loguear el error pero no bloquear el flujo principal
     console.error('[order.service] Error al notificar al admin por WhatsApp:', err.message);
   }
-};
+}
 
 /**
  * Crea un nuevo pedido directo en ERPNext a través del microservicio.
@@ -168,12 +180,12 @@ export const createOrder = async (orderData) => {
       contactName: contactName || "Desconocido",
       fecha_hora_entrega: orderData.fecha_hora_entrega,
       productos: orderData.productos,
-      monto_total: parseInt(orderData.monto_total) || 0
+      //monto_total: parseInt(orderData.monto_total) || 0
     };
 
     const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
     console.log(`[order.service] Enviando pedido a ERP Service en ${erpServiceUrl}`);
-    
+
     const response = await axios.post(`${erpServiceUrl}/api/orders`, payload);
 
     if (response.data && response.data.success) {
