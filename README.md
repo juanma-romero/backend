@@ -228,15 +228,21 @@ Admin escribe /hoy → Baileys → POST /api/messages
 
 ## Herramientas de Prueba
 
-### Simulador de Mensajes
+### Simuladores de Pruebas (Mensajes y Admin)
 
-El proyecto incluye un simulador HTML para probar la lógica sin enviar mensajes reales por WhatsApp.
+El proyecto incluye simuladores HTML para probar la lógica (mensajes de clientes y comandos de administrador) sin enviar mensajes reales por WhatsApp.
 
-- **Ubicación**: `tests/message_simulator.html`
-- **Uso**:
-  1. Ejecutar servidor estático: `npx serve -l 5000 tests`
-  2. Abrir: `http://localhost:5000/message_simulator.html`
-  3. Configurar el JID del contacto y el contenido del mensaje.
+- **Ubicaciones**: `tests/message_simulator.html` y `tests/admin_simulator.html`
+- **Uso Rápido (Recomendado)**:
+  1. Desde la carpeta raíz del proyecto (`voraz-main`), ejecutar: `./start_services.sh`
+  2. Este script inicia automáticamente la API, la IA, el ERP y el servidor de tests.
+  3. Abrir el simulador de mensajes: `http://localhost:5000/message_simulator.html`
+  4. Abrir el simulador de administrador: `http://localhost:5000/admin_simulator.html`
+  5. Para detener todos los servicios, presionar `Ctrl + C` en esa terminal.
+
+- **Uso Manual (Solo servidor de tests)**:
+  1. Dentro de la carpeta `backend`, ejecutar: `npx serve -l 5000 tests`
+  2. Abrir las URLs indicadas arriba.
 
 ---
 
