@@ -1,6 +1,7 @@
 import { saveOrderToDb, getRecentMessages, updateChatAnalysis, getChatByJid, getNextOrderNumber } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
 import axios from 'axios';
+import { notifyAdmin } from './notification.service.js';
 
 /**
  * Formatea los mensajes de la DB a un string simple para el prompt de la IA.
@@ -62,9 +63,11 @@ export const triggerOrderAnalysis = async (contactJid, orderSummaryText, action 
   try {
     const currentDateTime = getCurrentFormattedDateTime();
 
-    // Obtenemos los últimos 15 mensajes para contexto de auditoría
-    const { messages: recentMessages } = await getRecentMessages(contactJid, 15);
-    const historyText = formatMessagesForPrompt(recentMessages);
+    // Obtenemos un historial más amplio y lo filtramos por tiempo (últimas 12 horas)
+    const { messages: recentMessages } = await getRecentMessages(contactJid, 50);
+    const timeLimit = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const filteredMessages = recentMessages.filter(msg => new Date(msg.timestamp) >= timeLimit);
+    const historyText = formatMessagesForPrompt(filteredMessages);
 
     // Enviamos a la IA el pedido estructurado y el historial para validar que coincidan
     const formattedPrompt = `Contexto Adicional:\n- Fecha y hora actual del sistema: ${currentDateTime}\n\n--- Historial Reciente ---\n${historyText}\n\n--- Texto del Pedido ---\n${orderSummaryText}`;
@@ -143,27 +146,6 @@ export const replaceOrder = async (orderData) => {
   }
 };
 
-/**
- * Envía una notificación proactiva al número de admin en WhatsApp.
- * @param {string} message - El texto a enviar.
- */
-async function notifyAdmin(message) {
-  const dashUrl = process.env.DASHWHAT_URL || 'http://localhost:8880';
-  const adminJid = process.env.ADMIN_NOTIFY_JID;
-
-  if (!adminJid) {
-    console.warn('[order.service] ADMIN_NOTIFY_JID no está definido. No se envió la notificación al admin.');
-    return;
-  }
-
-  try {
-    await axios.post(`${dashUrl}/send-message`, { jid: adminJid, message });
-    console.log(`[order.service] Notificación enviada al admin (${adminJid}).`);
-  } catch (err) {
-    // Loguear el error pero no bloquear el flujo principal
-    console.error('[order.service] Error al notificar al admin por WhatsApp:', err.message);
-  }
-}
 
 /**
  * Crea un nuevo pedido directo en ERPNext a través del microservicio.

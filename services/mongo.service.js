@@ -118,6 +118,25 @@ export const updateChatAnalysis = async (contactJid, state, summary) => {
 };
 
 /**
+ * Obtiene los chats que están pendientes de respuesta por parte del administrador.
+ * @returns {Promise<Array>} - Un array con los chats pendientes.
+ */
+export const getPendingChats = async () => {
+  if (!collection) return [];
+  try {
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const pendingChats = await collection.find({
+      stateConversation: { $in: ['Requiere Acción del Admin', 'Sin Contestar'] },
+      updatedAt: { $gte: fortyEightHoursAgo }
+    }).toArray();
+    return pendingChats;
+  } catch (err) {
+    console.error('[mongo.service] Error al obtener chats pendientes:', err);
+    return [];
+  }
+};
+
+/**
  * Obtiene contactName de chat por su JID.
  * @param {string} contactJid - El JID del contacto.
  * @returns {Promise<Object|null>} - El documento del chat o null si no se encuentra.
@@ -139,6 +158,8 @@ export const getChatByJid = async (contactJid) => {
     return null;
   }
 };
+
+// Las siguientes funciones no se usan mas, se puede borrar todo?
 
 /**
  * Guarda un documento de pedido en la colección 'pedidos'.

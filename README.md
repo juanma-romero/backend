@@ -144,6 +144,22 @@ services/commands/
 
 ---
 
+#### 11. Tareas Programadas (`services/agenda.service.js`)
+
+Utiliza la librería **Agenda** (sobre MongoDB) para ejecutar trabajos (`jobs`) tanto diferidos como con horarios fijos (cron).
+- **Funciones activas:** 
+  - `notificar pendientes`: Se ejecuta periódicamente (ej. 6:00, 8:00, 10:00, etc.) buscando en la DB chats que requieren atención en las últimas 48hs y notifica al admin con un resumen.
+
+---
+
+#### 12. Servicio de Notificaciones (`services/notification.service.js`)
+
+Módulo dedicado para enviar mensajes proactivos desde el sistema hacia los usuarios (principalmente al admin).
+- **Funciones principales:**
+  - `notifyAdmin(message)`: Llama al endpoint de Baileys para alertar al administrador por WhatsApp (ej. confirmación de pedidos, alerta de mensajes sin responder).
+
+---
+
 ## Flujos de Trabajo
 
 ### Flujo 1: Mensaje de Cliente

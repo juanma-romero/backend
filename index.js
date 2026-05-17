@@ -5,6 +5,7 @@ import { connectToDatabase } from './db.js';
 import messagesRouter from './routes/messages.routes.js'; // Importamos el router
 // Importamos ambos setters y les damos alias para claridad
 import { setCollection as setMongoCollection, setDbClient } from './services/mongo.service.js'; 
+import { startAgenda } from './services/agenda.service.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +24,9 @@ async function initializeDatabase() {
     setDbClient(client);
 
     console.log("Base de datos inicializada y dependencias inyectadas en los servicios.");
+    
+    // Iniciar Agenda después de que MongoDB esté conectado
+    await startAgenda();
   } catch (error) {
     console.error('Error initializing database:', error);
     process.exit(1);
