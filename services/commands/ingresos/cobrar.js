@@ -1,19 +1,19 @@
-// services/commands/pedidos/pagar.js
+// services/commands/ingresos/cobrar.js
 import axios from 'axios';
 
-export const aliases = ['pagado', 'cobrar', 'pago'];
+export const aliases = ['cobrado', 'cobra', 'cobrar'];
 
 /**
  * Ejecuta el comando para registrar un pago de un pedido en ERPNext.
- * Uso: /pagar <ID_ERP> [monto] [metodo]
+ * Uso: /cobrar <ID_ERP> [monto] [metodo]
  * Ejemplos: 
- *   /pagar SAL-ORD-2026-00349
- *   /pagar SAL-ORD-2026-00349 transferencia
- *   /pagar SAL-ORD-2026-00349 50000 efectivo
+ *   /cobrar SAL-ORD-2026-00349
+ *   /cobrar SAL-ORD-2026-00349 transferencia
+ *   /cobrar SAL-ORD-2026-00349 50000 efectivo
  */
 export const execute = async (args) => {
   if (args.length < 1) {
-    return "Uso incorrecto. Formato: /pagar <ID_ERP> [monto] [metodo]\nEjemplo: /pagar SAL-ORD-2026-00349 transferencia";
+    return "Uso incorrecto. Formato: /cobrar <ID_ERP> [monto] [metodo]\nEjemplo: /cobrar SAL-ORD-2026-00349 transferencia";
   }
 
   const orderId = args[0].toUpperCase();
@@ -22,7 +22,7 @@ export const execute = async (args) => {
 
   // Parsear resto de argumentos buscando monto y método
   const remainingArgs = args.slice(1).map(a => a.toLowerCase());
-  
+
   // Buscar método de pago
   if (remainingArgs.some(a => ['transferencia', 'transf', 'banco'].includes(a))) {
     method = 'transferencia';
@@ -67,7 +67,7 @@ export const execute = async (args) => {
     }
 
   } catch (error) {
-    console.error(`[Command pagar] Error para ${orderId}:`, error.message);
+    console.error(`[Command cobrar] Error para ${orderId}:`, error.message);
     if (error.response && error.response.data && error.response.data.detail) {
       return `❌ *Error del sistema*: ${error.response.data.detail}`;
     }

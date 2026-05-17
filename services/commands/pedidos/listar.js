@@ -1,4 +1,4 @@
-// services/commands/listado.js
+// services/commands/pedidos/listar.js
 import axios from 'axios';
 import { formatOrdersForWhatsapp } from '../../format.service.js';
 
@@ -9,7 +9,7 @@ import { formatOrdersForWhatsapp } from '../../format.service.js';
  */
 export const execute = async () => {
   try {
-    console.log("[Command listado] Ejecutando comando para listar pedidos activos desde ERPNext.");
+    console.log("[Command listar] Ejecutando comando para listar pedidos activos desde ERPNext.");
     
     const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
     const response = await axios.get(`${erpServiceUrl}/api/orders/pending`);
@@ -23,7 +23,7 @@ export const execute = async () => {
 
     return formattedOrders;
   } catch (error) {
-    console.error("[Command listado] Error al ejecutar el comando:", error);
+    console.error("[Command listar] Error al ejecutar el comando:", error);
     return "Hubo un error al generar el listado de pedidos.";
   }
 };

@@ -1,4 +1,4 @@
-// services/commands/cancelado.js
+// services/commands/pedidos/cancelar.js
 import axios from 'axios';
 
 /**
@@ -9,14 +9,14 @@ import axios from 'axios';
 export const execute = async (args) => {
   const orderIdStr = args[0];
   if (!orderIdStr) {
-    return 'Por favor, proporciona un ID de pedido. Ejemplo: /cancelado SALES-ORD-2026-00001';
+    return 'Por favor, proporciona un ID de pedido. Ejemplo: /cancelar SALES-ORD-2026-00001';
   }
 
   const orderId = orderIdStr.trim();
   const ERP_SERVICE_URL = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
 
   try {
-    console.log(`[Command cancelado] Solicitando cancelación para ${orderId} en ${ERP_SERVICE_URL}`);
+    console.log(`[Command cancelar] Solicitando cancelación para ${orderId} en ${ERP_SERVICE_URL}`);
     const result = await axios.post(`${ERP_SERVICE_URL}/api/orders/${orderId}/cancel`);
     
     if (result.data && result.data.success) {
@@ -25,7 +25,7 @@ export const execute = async (args) => {
     
     return `⚠️ ${orderId} tuvo una respuesta inesperada: ${JSON.stringify(result.data)}`;
   } catch (error) {
-    console.error(`[Command:cancelado] Error al actualizar el pedido ${orderId}:`, error.message);
+    console.error(`[Command cancelar] Error al actualizar el pedido ${orderId}:`, error.message);
     
     if (error.response) {
       if (error.response.status === 404) {
