@@ -6,6 +6,7 @@ import { processMessage } from '../services/message.processor.js';
 import { getMessageText } from '../services/format.service.js';
 import fs from 'fs';
 import path from 'path';
+import axios from 'axios';
 
 // Leer configuración de números de administradores
 const adminPhonesPath = path.join(process.cwd(), 'admin-phones.json');
@@ -67,13 +68,39 @@ router.post('/messages', async (req, res) => {
     // 1. Guardar el mensaje en la DB inmediatamente.
     await saveMessage(messageData);
 
-    // 2. Delegar toda la lógica de procesamiento al Message Processor.
+    // 2. Sincronizar el cliente con ERPNext de forma asíncrona
+    syncCustomerWithERP(messageData).catch(err => {
+      console.error('[Router /messages] Error al sincronizar cliente con ERPNext:', err.message);
+    });
+
+    // 3. Delegar toda la lógica de procesamiento al Message Processor.
     await processMessage(messageData);
 
     res.sendStatus(200);
   }
 });
+// Función asíncrona para sincronizar el contacto de WhatsApp con ERPNext
+const syncCustomerWithERP = async (messageData) => {
+  try {
+    const remoteJid = messageData.key.remoteJid;
+    const contactName = messageData.pushName || '';
+    
+    // Ignorar si no hay JID o si es un mensaje saliente
+    if (!remoteJid || messageData.key.fromMe) return;
 
-
+    const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
+    console.log(`[syncCustomerWithERP] Sincronizando cliente ${remoteJid} con nombre '${contactName}' en ERPNext...`);
+    
+    // Hacemos el post sin esperar (fire-and-forget en el flujo principal)
+    axios.post(`${erpServiceUrl}/api/customers/sync`, {
+      remoteJid: remoteJid,
+      contactName: contactName
+    }).catch(err => {
+      console.warn(`[syncCustomerWithERP] Error de red o validación en erp-service: ${err.message}`);
+    });
+  } catch (error) {
+    console.error('[syncCustomerWithERP] Error:', error.message);
+  }
+};
 
 export default router;

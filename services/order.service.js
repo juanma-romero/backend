@@ -1,4 +1,4 @@
-import { saveOrderToDb, getRecentMessages, updateChatAnalysis, getChatByJid, getNextOrderNumber } from './mongo.service.js';
+import {getRecentMessages, updateChatAnalysis, getChatByJid } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
 import axios from 'axios';
 import { notifyAdmin } from './notification.service.js';
@@ -79,10 +79,10 @@ export const triggerOrderAnalysis = async (contactJid, orderSummaryText, action 
       // Verificamos si la IA detectó una discrepancia
       if (analysisResult.discrepancia && analysisResult.discrepancia.detectada) {
         console.warn(`[order.service] DISCREPANCIA DETECTADA: ${analysisResult.discrepancia.motivo}`);
-        
+
         const notifyMsg = `⚠️ *ALERTA DE DISCREPANCIA*\n\nIntentaste agendar un pedido, pero noté un error:\n_${analysisResult.discrepancia.motivo}_\n\nPor favor, verifica el historial del cliente y vuelve a enviar el comando corregido.`;
         await notifyAdmin(notifyMsg);
-        
+
         return; // Detenemos el flujo, no creamos ni reemplazamos el pedido
       }
 

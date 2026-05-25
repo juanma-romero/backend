@@ -120,14 +120,17 @@ Sistema de **carga dinámica de comandos por directorio**. Al iniciar, recorre `
 ```
 services/commands/
 ├── pedidos/          ← Activo
-│   ├── listado.js
+│   ├── listar.js
+│   ├── agendar.js
 │   ├── hoy.js
 │   ├── manana.js
 │   ├── hecho.js
-│   ├── cancelado.js
+│   ├── cancelar.js
 ├── egresos/          ← Planificado (vacío)
-├── informes/         ← Planificado (vacío)
-├── ingresos/         ← Planificado (vacío)
+├── informes/         ← Activo
+│   ├── consultar.js    
+├── ingresos/         ← Activo
+│   ├── cobrar.js
 └── inventario/       ← Planificado (vacío)
 ```
 
@@ -136,11 +139,11 @@ services/commands/
 | Comando | Descripción |
 |---------|-------------|
 | `/agendar <número> <detalle>` | Genera un pedido en ERPNext directo desde el chat admin. Formatea automáticamente el número copiado (ej: `+595 971 166266`). Alias: `/pedido`, `/crear`. |
-| `/listado` | Lista todos los pedidos activos consultando ERPNext. |
+| `/listar` | Lista todos los pedidos activos consultando ERPNext. |
 | `/hoy` | Pedidos con entrega para la fecha actual (filtra por `delivery_date` en ERP). |
 | `/manana` | Pedidos con entrega para el día siguiente. |
-| `/hecho <ID_ERP>` | Marca un pedido como entregado generando un Delivery Note en ERPNext. |
-| `/cancelado <ID_ERP>` | Cancela un pedido (`docstatus=2`). Reporta si hay bloqueos contables. |
+| `/entregado <ID_ERP>` | Marca un pedido como entregado generando un Delivery Note en ERPNext. |
+| `/cancelar <ID_ERP>` | Cancela un pedido (`docstatus=2`). Reporta si hay bloqueos contables. |
 
 ---
 
@@ -166,7 +169,8 @@ Módulo dedicado para enviar mensajes proactivos desde el sistema hacia los usua
 
 ```
 Cliente → Baileys → POST /api/messages
-  └── Guardar en MongoDB (chatsV2)
+  ├── Guardar en MongoDB (chatsV2)
+  ├── syncCustomerWithERP() [asíncrono] → erp-service POST /api/customers/sync
   └── processMessage()
         ├── [60s timer] handleConversationAnalysis → ia-service /analyze-conversation
         └── [si admin escribe frase clave] handleOrderTrigger
@@ -196,7 +200,6 @@ Admin escribe `/agendar +595 972 860099 1 combo...` → Baileys → POST /api/me
   └── triggerOrderAnalysis(jid, texto, 'create')
         └── ia-service /analyze-order → extrae JSON del pedido (manteniendo decimales con punto)
         └── createOrder() → erp-service POST /api/orders → ERPNext crea Sales Order
-              └── Nota: Busca en Mongo si el cliente ya interactuó para usar su nombre, sino usa "Desconocido".
         └── notifyAdmin() → Admin recibe confirmación WA
 ```
 
