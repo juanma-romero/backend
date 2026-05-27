@@ -126,7 +126,8 @@ services/commands/
 │   ├── manana.js
 │   ├── hecho.js
 │   ├── cancelar.js
-├── egresos/          ← Planificado (vacío)
+├── egresos/          ← Activo
+│   ├── pagar.js
 ├── informes/         ← Activo
 │   ├── consultar.js    
 ├── ingresos/         ← Activo
@@ -144,6 +145,8 @@ services/commands/
 | `/manana` | Pedidos con entrega para el día siguiente. |
 | `/entregado <ID_ERP>` | Marca un pedido como entregado generando un Delivery Note en ERPNext. |
 | `/cancelar <ID_ERP>` | Cancela un pedido (`docstatus=2`). Reporta si hay bloqueos contables. |
+| `/cobrar <ID_o_JID> <monto> <método>` | Registra un pago y genera el recibo en ERPNext. Resuelve inteligentemente el pedido por JID del cliente. |
+| `/pagar <concepto> <monto> <método>` | Registra una salida de dinero directo en la contabilidad (Journal Entry). Conceptos: mercaderia, gasto. |
 
 ---
 
