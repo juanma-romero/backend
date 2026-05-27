@@ -3,10 +3,13 @@ import axios from 'axios';
 
 export const aliases = ['pago', 'pagar', 'pagado', 'gasto', 'compra'];
 
-// Mapeo exacto a las cuentas descubiertas en ERPNext
+// Mapeo exacto a las cuentas descubiertas en ERPNext (usando variables de entorno para portabilidad)
+const conceptMercaderia = process.env.ACCOUNT_MERCADERIA || "1414 - Ajuste de inventario - Vz";
+const conceptGasto = process.env.ACCOUNT_GASTO || "5221 - Gastos varios - Vz";
+
 const CONCEPT_MAP = {
-  "mercaderia": "1414 - Ajuste de inventario - Vz",
-  "gasto": "5221 - Gastos varios - Vz"
+  "mercaderia": conceptMercaderia,
+  "gasto": conceptGasto
 };
 
 /**
