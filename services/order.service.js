@@ -1,4 +1,4 @@
-import {getRecentMessages, updateChatAnalysis, getChatByJid } from './mongo.service.js';
+import { getRecentMessages, updateChatAnalysis, getChatByJid } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
 import axios from 'axios';
 import { notifyAdmin } from './notification.service.js';
@@ -162,7 +162,6 @@ export const createOrder = async (orderData) => {
       contactName: contactName || "Desconocido",
       fecha_hora_entrega: orderData.fecha_hora_entrega,
       productos: orderData.productos,
-      //monto_total: parseInt(orderData.monto_total) || 0
     };
 
     const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';

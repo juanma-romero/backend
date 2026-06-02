@@ -1,8 +1,8 @@
-# Documentación Técnica del Backend (Orquestador WhatsApp)
+# Documentación Técnica del Backend
 
 ## Descripción General
 
-El **backend** es el orquestador central del sistema Voraz. Recibe todos los mensajes entrantes de WhatsApp a través del servidor Baileys (`dashwhat2`), los clasifica según su origen (cliente o administrador), y coordina las acciones correspondientes: análisis de IA, gestión de pedidos en ERPNext, y respuestas automáticas.
+El **backend** es el orquestador central del sistema Voraz. Recibe todos los mensajes entrantes de WhatsApp a través del servidor Baileys (`dashwhat2`), los clasifica según su origen (cliente o administrador), y coordina las acciones correspondientes: análisis de IA, tareas de gestión en ERPNext, y respuestas automáticas.
 
 ---
 
@@ -146,7 +146,7 @@ services/commands/
 | `/entregado <ID_ERP>` | Marca un pedido como entregado generando un Delivery Note en ERPNext. |
 | `/cancelar <ID_ERP>` | Cancela un pedido (`docstatus=2`). Reporta si hay bloqueos contables. |
 | `/cobrar <ID_o_JID> <monto> <método>` | Registra un pago y genera el recibo en ERPNext. Resuelve inteligentemente el pedido por JID del cliente. |
-| `/pagar <concepto> <monto> <método>` | Registra una salida de dinero directo en la contabilidad (Journal Entry). Conceptos: mercaderia, gasto. |
+| `/pagar <concepto> <monto> <método>` | Registra una salida de dinero directo en la contabilidad (Journal Entry). Conceptos: mercaderia, gasto, consumo, ganancia. |
 
 ---
 
@@ -163,6 +163,51 @@ Utiliza la librería **Agenda** (sobre MongoDB) para ejecutar trabajos (`jobs`) 
 Módulo dedicado para enviar mensajes proactivos desde el sistema hacia los usuarios (principalmente al admin).
 - **Funciones principales:**
   - `notifyAdmin(message)`: Llama al endpoint de Baileys para alertar al administrador por WhatsApp (ej. confirmación de pedidos, alerta de mensajes sin responder).
+
+#### 13. Agente (Dentro de backend)
+- **Descripción**: Sistema de agentes de IA basado en *Function Calling* (Groq). Permite al administrador realizar consultas en lenguaje natural desde WhatsApp. El agente interpreta la consulta, selecciona la "tool" adecuada, la ejecuta y formula una respuesta en lenguaje natural formateada para WhatsApp.
+- **Comando de activación**: `/consultar [texto libre]` (aliases: `/informe`, `/reporte`, `/info`)
+- **Modelo**: `llama-3.3-70b-versatile` (Groq plan pago) · Fallback: `gemini-2.5-flash-lite`
+- **Arquitectura**:
+    - El Backend detecta el comando y llama a `ia-service POST /agent-query`.
+    - El `ia-service` ejecuta el loop de Function Calling: 1ª llamada al LLM (elige tool) → Python ejecuta la función real → 2ª llamada al LLM (formula respuesta).
+    - El LLM **nunca ejecuta código ni queries directamente**. Solo elige el nombre de la función y los parámetros dentro de los rangos definidos en `agent_tools.py`.
+- **Archivos clave**:
+    - `ia-service/routers/agent.py` — Endpoint `/agent-query` y loop de function calling.
+    - `ia-service/services/agent_tools.py` — Definición de tools (schema para el LLM) + funciones Python reales.
+    - `backend/services/commands/informes/consultar.js` — Comando del agente en el backend.
+    - `erp-service/routers/reports.py` — Endpoints `GET /api/sales/summary` y `GET /api/sales/by-product` (usados por las tools del agente).
+
+
+### Tools implementadas (Fase 1 — ✅ Funcionando)
+
+| Tool | Descripción | Fuente |
+|------|-------------|--------|
+| `get_sales_summary` | Total de ventas en ₲ y cantidad de pedidos por período | ERPNext vía erp-service |
+| `get_sales_by_product` | Ventas desagregadas por producto, ordenadas por cantidad | ERPNext vía erp-service |
+| `get_pending_orders` | Lista de pedidos pendientes de entrega | ERPNext vía erp-service |
+
+### Períodos soportados por las tools de ventas
+`hoy` · `semana` · `mes` · `mes_pasado` · `anio`
+
+### Fases pendientes del agente
+
+#### Fase 2 — Stock y Finanzas (pendiente)
+Nuevas tools a implementar en `agent_tools.py` + endpoints en `erp-service`:
+- `get_stock_balance` → `GET /api/stock/balance` en erp-service
+- `get_payment_entries` → `GET /api/payments/summary` (cobros recibidos)
+- `get_pending_payments` → `GET /api/payments/pending` (cobros pendientes)
+- `get_supplier_expenses` → `GET /api/expenses/summary` (pagos a proveedores)
+
+#### Fase 3 — Consultas a MongoDB / Mensajes (pendiente)
+Conexión directa de `ia-service` a MongoDB para consultas de conversaciones:
+- `get_client_messages(client_name, limit, only_pending?)` — últimos N mensajes de un cliente
+- `get_pending_messages(limit)` — mensajes sin contestar
+- Requiere agregar `MONGO_URI` al `.env` del `ia-service` y crear `ia-service/services/mongo_tools.py`.
+
+#### Fase 4 — Multi-tool / Razonamiento cruzado (pendiente)
+Consultas que requieren combinar varias tools en un solo ciclo de razonamiento.
+Ejemplo: *"¿Cuánto me debe el cliente que más compró este mes?"* → `get_top_customers` + `get_pending_payments`.
 
 ---
 
@@ -195,7 +240,6 @@ Admin escribe en chat de cliente → Baileys → POST /api/messages
 ```
 
 ### Flujo 3: Agendamiento Directo de Admin (`/agendar`)
-
 ```
 Admin escribe `/agendar +595 972 860099 1 combo...` → Baileys → POST /api/messages
   └── handleAdminCommand('agendar')
@@ -207,7 +251,6 @@ Admin escribe `/agendar +595 972 860099 1 combo...` → Baileys → POST /api/me
 ```
 
 ### Flujo 4: Modificación de Pedido ("Modifico tu pedido:")
-
 ```
 Admin escribe en chat de cliente → Baileys → POST /api/messages
   └── handleOrderTrigger detecta la frase
@@ -229,27 +272,6 @@ Admin escribe /hoy → Baileys → POST /api/messages
   └── return { reply: "...", targetJid: adminJid }
   └── Baileys recibe reply y llama a sock.sendMessage()
 ```
-
----
-
-## Herramientas de Prueba
-
-### Simuladores de Pruebas (Mensajes y Admin)
-
-El proyecto incluye simuladores HTML para probar la lógica (mensajes de clientes y comandos de administrador) sin enviar mensajes reales por WhatsApp.
-
-- **Ubicaciones**: `tests/message_simulator.html` y `tests/admin_simulator.html`
-- **Uso Rápido (Recomendado)**:
-  1. Desde la carpeta raíz del proyecto (`voraz-main`), ejecutar: `./start_services.sh`
-  2. Este script inicia automáticamente la API, la IA, el ERP y el servidor de tests.
-  3. Abrir el simulador de mensajes: `http://localhost:5000/message_simulator.html`
-  4. Abrir el simulador de administrador: `http://localhost:5000/admin_simulator.html`
-  5. Para detener todos los servicios, presionar `Ctrl + C` en esa terminal.
-
-- **Uso Manual (Solo servidor de tests)**:
-  1. Dentro de la carpeta `backend`, ejecutar: `npx serve -l 5000 tests`
-  2. Abrir las URLs indicadas arriba.
-
 ---
 
 ## Estructura de Datos
@@ -293,7 +315,23 @@ El proyecto incluye simuladores HTML para probar la lógica (mensajes de cliente
 
 ---
 
-## Posibles Mejoras
+## Simuladores de Pruebas (Mensajes y Admin - Solo en entorno Local)
+
+El proyecto incluye simuladores HTML para probar la lógica (mensajes de clientes y comandos de administrador) sin enviar mensajes reales por WhatsApp.
+
+- **Ubicaciones**: `tests/message_simulator.html` y `tests/admin_simulator.html`
+- **Uso Rápido (Recomendado)**:
+  1. Desde la carpeta raíz del proyecto (`voraz-main`), ejecutar: `./start_services.sh`
+  2. Este script inicia automáticamente la API, la IA, el ERP y el servidor de tests.
+  3. Abrir el simulador de mensajes: `http://localhost:5000/message_simulator.html`
+  4. Abrir el simulador de administrador: `http://localhost:5000/admin_simulator.html`
+  5. Para detener todos los servicios, presionar `Ctrl + C` en esa terminal.
+
+- **Uso Manual (Solo servidor de tests)**:
+  1. Dentro de la carpeta `backend`, ejecutar: `npx serve -l 5000 tests`
+  2. Abrir las URLs indicadas arriba.
+
+---
 
 1. Implementar autenticación para proteger el endpoint `/api/messages`.
 2. Migrar los temporizadores de análisis a Redis para escalabilidad horizontal.

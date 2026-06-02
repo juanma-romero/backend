@@ -6,10 +6,14 @@ export const aliases = ['pago', 'pagar', 'pagado', 'gasto', 'compra'];
 // Mapeo exacto a las cuentas descubiertas en ERPNext (usando variables de entorno para portabilidad)
 const conceptMercaderia = process.env.ACCOUNT_MERCADERIA || "1414 - Ajuste de inventario - Vz";
 const conceptGasto = process.env.ACCOUNT_GASTO || "Gastos varios - Vz";
+const conceptExistencias = process.env.ACCOUNT_EXISTENCIAS || "Gastos sobre existencias - Vz";
+const conceptDividendos = process.env.ACCOUNT_DIVIDENDOS || "Dividendos pagados - Vz";
 
 const CONCEPT_MAP = {
   "mercaderia": conceptMercaderia,
-  "gasto": conceptGasto
+  "gasto": conceptGasto,
+  "consumo": conceptExistencias,
+  "ganancia": conceptDividendos
 };
 
 /**
@@ -18,17 +22,19 @@ const CONCEPT_MAP = {
  * Ejemplos:
  *   /pagar mercaderia 150000 efectivo
  *   /pagar gasto 50 mil transferencia
+ *   /pagar consumo 20 mil efectivo
+ *   /pagar ganancia 100 mil transferencia
  */
 export const execute = async (args) => {
   if (args.length < 2) {
-    return "Uso incorrecto. Formato: /pagar <concepto> <monto> [metodo]\nConceptos permitidos: mercaderia, gasto\nEjemplo: /pagar mercaderia 150 mil efectivo";
+    return "Uso incorrecto. Formato: /pagar <concepto> <monto> [metodo]\nConceptos permitidos: mercaderia, gasto, consumo, ganancia\nEjemplo: /pagar mercaderia 150 mil efectivo";
   }
 
   const conceptArg = args[0].toLowerCase();
   
   // Validar concepto
   if (!CONCEPT_MAP[conceptArg]) {
-    return `❌ Concepto no válido. Usa 'mercaderia' o 'gasto'.`;
+    return `❌ Concepto no válido. Usa 'mercaderia', 'gasto', 'consumo' o 'ganancia'.`;
   }
   
   const conceptAccount = CONCEPT_MAP[conceptArg];
