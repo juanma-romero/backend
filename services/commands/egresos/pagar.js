@@ -21,8 +21,8 @@ const CONCEPT_MAP = {
  * Uso: /pagar <concepto> <monto> [metodo]
  * Ejemplos:
  *   /pagar mercaderia 150000 efectivo
- *   /pagar gasto 50 mil transferencia
- *   /pagar consumo 20 mil efectivo
+ *   /pagar gasto 50 mil transferencia (electricidad, alquiler, gastos generales y administrativos)
+ *   /pagar consumo 20 mil efectivo (gastos relacionados con ventas)
  *   /pagar ganancia 100 mil transferencia
  */
 export const execute = async (args) => {
@@ -31,12 +31,12 @@ export const execute = async (args) => {
   }
 
   const conceptArg = args[0].toLowerCase();
-  
+
   // Validar concepto
   if (!CONCEPT_MAP[conceptArg]) {
     return `❌ Concepto no válido. Usa 'mercaderia', 'gasto', 'consumo' o 'ganancia'.`;
   }
-  
+
   const conceptAccount = CONCEPT_MAP[conceptArg];
 
   let amount = 0;
@@ -73,7 +73,7 @@ export const execute = async (args) => {
 
   try {
     const remark = `Registro de salida por comando: ${conceptArg}`;
-    
+
     const response = await axios.post(`${erpServiceUrl}/api/accounting/expense`, {
       concept_account: conceptAccount,
       amount: amount,

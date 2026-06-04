@@ -13,7 +13,7 @@
 
 import { queryIAService } from '../../ia.service.js';
 
-export const aliases = ['informe', 'reporte', 'info'];
+export const aliases = ['informe', 'info'];
 
 /**
  * Ejecuta el comando /consultar.
