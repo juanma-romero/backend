@@ -74,12 +74,14 @@ export const getInboxId = async () => {
 };
 
 /**
- * Convierte un WhatsApp JID en formato de teléfono E.164 (+595...).
+ * Convierte un WhatsApp JID en formato de teléfono E.164 (+595...) si es un número real.
+ * Si es un identificador especial (ej. @lid), retorna null.
  */
 export const jidToPhoneNumber = (jid) => {
-  if (!jid) return '';
-  const digits = jid.split('@')[0].replace(/\D/g, '');
-  return digits.startsWith('+') ? digits : `+${digits}`;
+  if (!jid || jid.includes('@lid') || jid.includes('@g.us')) return null;
+  const rawDigits = jid.split('@')[0].replace(/\D/g, '');
+  if (rawDigits.length < 9) return null; // No es un número de teléfono válido
+  return rawDigits.startsWith('+') ? rawDigits : `+${rawDigits}`;
 };
 
 /**
@@ -95,27 +97,31 @@ export const getOrCreateContact = async (jid, name) => {
   const baseUrl = getBaseUrl();
   const accountId = getAccountId();
   const phoneNumber = jidToPhoneNumber(jid);
+  const displayName = name || (phoneNumber ? phoneNumber : jid.split('@')[0]);
 
   try {
-    // 1. Buscar contacto por teléfono
-    const searchRes = await axios.get(
-      `${baseUrl}/api/v1/accounts/${accountId}/contacts/search?q=${encodeURIComponent(phoneNumber)}`,
-      { headers: getHeaders(), timeout: 5000 }
-    );
+    // 1. Buscar contacto existente
+    let searchUrl = `${baseUrl}/api/v1/accounts/${accountId}/contacts/search?q=`;
+    searchUrl += encodeURIComponent(phoneNumber || jid);
 
+    const searchRes = await axios.get(searchUrl, { headers: getHeaders(), timeout: 5000 });
     const contacts = searchRes.data?.payload || [];
     if (contacts.length > 0) {
       return contacts[0].id;
     }
 
-    // 2. Si no existe, crearlo
+    // 2. Si no existe, crearlo (solo incluir phone_number si es un teléfono real válido)
+    const contactPayload = {
+      name: displayName,
+      identifier: jid,
+    };
+    if (phoneNumber) {
+      contactPayload.phone_number = phoneNumber;
+    }
+
     const createRes = await axios.post(
       `${baseUrl}/api/v1/accounts/${accountId}/contacts`,
-      {
-        name: name || phoneNumber,
-        phone_number: phoneNumber,
-        identifier: jid,
-      },
+      contactPayload,
       { headers: getHeaders(), timeout: 5000 }
     );
 
