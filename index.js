@@ -3,6 +3,7 @@ import http from 'http';
 import cors from 'cors'; 
 import { connectToDatabase } from './db.js';
 import messagesRouter from './routes/messages.routes.js'; // Importamos el router
+import chatwootRouter from './routes/chatwoot.routes.js';
 // Importamos ambos setters y les damos alias para claridad
 import { setCollection as setMongoCollection, setDbClient } from './services/mongo.service.js'; 
 import { startAgenda } from './services/agenda.service.js';
@@ -35,10 +36,10 @@ async function initializeDatabase() {
 
 initializeDatabase();
 
-
-// todas las rutas que empiecen con '/api'
-// deben ser manejadas por nuestro 'messagesRouter'.
+// Rutas de la API
 app.use('/api', messagesRouter);
+app.use('/api/chatwoot', chatwootRouter);
+
 // ----------------------------------
 
 const port = process.env.PORT || 3000;

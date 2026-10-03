@@ -81,14 +81,19 @@ Coordina el procesamiento de mensajes de clientes. Delega a los manejadores de e
 
 #### 7. Servicio de Pedidos (`services/order.service.js`)
 
-Orquesta la creación, modificación y notificación de pedidos.
+Orquesta la creación, modificación y confirmación directa de pedidos hacia el cliente.
 
 **Funciones principales:**
 
-- **`triggerOrderAnalysis(jid, texto, action)`** — Construye el prompt con fecha/hora local para la IA y según el `action` invoca `createOrder` o `replaceOrder`.
-- **`createOrder(orderData)`** — Envía el pedido al `erp-service` (`POST /api/orders`). Ante éxito, actualiza el estado de la conversación en Mongo y **envía notificación al admin por WhatsApp**.
-- **`replaceOrder(orderData)`** — Envía la solicitud de reemplazo al `erp-service` (`POST /api/orders/replace_latest`). Internamente, el microservicio cancela el último pedido activo del cliente y crea el nuevo. También **notifica al admin**.
-- **`notifyAdmin(message)`** — Función interna que llama al endpoint `POST /send-message` de Baileys (`dashwhat2`) para enviar un mensaje proactivo al número admin configurado.
+- **`triggerOrderAnalysis(jid, texto, action)`** — Construye el prompt con fecha/hora local para la IA y según el `action` invoca `createOrder` o `replaceOrder`. Si la IA detecta discrepancias, alerta al admin por WhatsApp para auditoría pero **no interrumpe el flujo**, procediendo a generar el pedido.
+- **`createOrder(orderData)`** — Envía el pedido al `erp-service` (`POST /api/orders`). Obtiene el `order_name` y `grand_total` de ERPNext, actualiza el estado de la conversación en Mongo (`Pedido Creado`) y **envía automáticamente el mensaje de confirmación al cliente** por WhatsApp.
+- **`replaceOrder(orderData)`** — Envía la solicitud de reemplazo al `erp-service` (`POST /api/orders/replace_latest`). Cancela el último pedido activo del cliente, somete la nueva orden, actualiza el estado en Mongo (`Pedido Modificado`) y **envía el mensaje de actualización al cliente**.
+- **`buildClientConfirmationMessage(...)`** — Construye el mensaje amigable de atención al cliente con:
+  - Identificador visual de IA `🤖` al inicio.
+  - N° de Pedido oficial de ERPNext (`SALES-ORD-XXXX`).
+  - Fecha y hora programada de entrega formateada en hora local.
+  - Desglose de productos y costo de delivery expresado en Guaraníes (₲).
+  - Total a abonar en Guaraníes (₲).
 
 **Zona horaria**: Usa `Etc/GMT+3` (UTC-3 fijo) para evitar variaciones estacionales al construir el prompt de fecha/hora.
 
@@ -106,7 +111,7 @@ Orquesta la creación, modificación y notificación de pedidos.
 
 Microservicio externo en Python (FastAPI) ubicado en `/erp-service/` en la raíz del proyecto. Ver su propia documentación para detalles internos.
 
-- **Orquestador de Pedidos ERPNext**: Crea `Sales Orders`, genera `Delivery Notes` (para `/hecho`), busca y cancela órdenes activas (para `/cancelado` y `Modifico tu pedido:`).
+- **Orquestador de Pedidos ERPNext**: Crea `Sales Orders` devolviendo `order_name` y `grand_total`, genera `Delivery Notes` (para `/hecho`), busca y cancela órdenes activas (para `/cancelado` y `Modifico tu pedido:`).
 - Configurable mediante `ERP_SERVICE_URL` (por defecto `http://localhost:8001`).
 
 ---
@@ -139,7 +144,7 @@ services/commands/
 
 | Comando | Descripción |
 |---------|-------------|
-| `/agendar <número> <detalle>` | Genera un pedido en ERPNext directo desde el chat admin. Formatea automáticamente el número copiado (ej: `+595 971 166266`). Alias: `/pedido`, `/crear`. |
+| `/agendar <número> <detalle>` | Genera un pedido en ERPNext directo desde el chat admin y envía la confirmación con IA al cliente. Formatea automáticamente el número copiado (ej: `+595 971 166266`). Alias: `/pedido`, `/crear`. |
 | `/listar` | Lista todos los pedidos activos consultando ERPNext. |
 | `/hoy` | Pedidos con entrega para la fecha actual (filtra por `delivery_date` en ERP). |
 | `/manana` | Pedidos con entrega para el día siguiente. |
@@ -160,9 +165,10 @@ Utiliza la librería **Agenda** (sobre MongoDB) para ejecutar trabajos (`jobs`) 
 
 #### 12. Servicio de Notificaciones (`services/notification.service.js`)
 
-Módulo dedicado para enviar mensajes proactivos desde el sistema hacia los usuarios (principalmente al admin).
+Módulo dedicado para enviar mensajes proactivos desde el sistema hacia WhatsApp mediante Baileys (`dashwhat2`).
 - **Funciones principales:**
-  - `notifyAdmin(message)`: Llama al endpoint de Baileys para alertar al administrador por WhatsApp (ej. confirmación de pedidos, alerta de mensajes sin responder).
+  - `sendClientMessage(jid, message)`: Envía mensajes directos de atención y confirmación de pedidos a los clientes.
+  - `notifyAdmin(message)`: Envía alertas y resúmenes al administrador (ej. discrepancias en pedidos auditados, alertas de mensajes sin responder).
 
 #### 13. Agente (Dentro de backend)
 - **Descripción**: Sistema de agentes de IA basado en *Function Calling* (Groq). Permite al administrador realizar consultas en lenguaje natural desde WhatsApp. El agente interpreta la consulta, selecciona la "tool" adecuada, la ejecuta y formula una respuesta en lenguaje natural formateada para WhatsApp.

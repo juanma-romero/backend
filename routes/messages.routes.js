@@ -4,6 +4,7 @@ import { saveMessage } from '../services/mongo.service.js';
 import { handleAdminCommand } from '../services/command.handler.js';
 import { processMessage } from '../services/message.processor.js';
 import { getMessageText } from '../services/format.service.js';
+import { forwardIncomingToChatwoot } from '../services/chatwoot.service.js';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
@@ -68,12 +69,21 @@ router.post('/messages', async (req, res) => {
     // 1. Guardar el mensaje en la DB inmediatamente.
     await saveMessage(messageData);
 
-    // 2. Sincronizar el cliente con ERPNext de forma asíncrona
+    // 2. Reenviar el mensaje entrante a Chatwoot de forma asíncrona
+    forwardIncomingToChatwoot({
+      jid: messageData.key.remoteJid,
+      name: messageData.pushName || '',
+      text: textContent,
+    }).catch(err => {
+      console.warn('[Router /messages] Error al reenviar a Chatwoot:', err.message);
+    });
+
+    // 3. Sincronizar el cliente con ERPNext de forma asíncrona
     syncCustomerWithERP(messageData).catch(err => {
       console.error('[Router /messages] Error al sincronizar cliente con ERPNext:', err.message);
     });
 
-    // 3. Delegar toda la lógica de procesamiento al Message Processor.
+    // 4. Delegar toda la lógica de procesamiento al Message Processor.
     await processMessage(messageData);
 
     res.sendStatus(200);
