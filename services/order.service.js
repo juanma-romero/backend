@@ -1,7 +1,104 @@
 import { getRecentMessages, updateChatAnalysis, getChatByJid } from './mongo.service.js';
 import { queryIAService } from './ia.service.js';
 import axios from 'axios';
-import { notifyAdmin } from './notification.service.js';
+import { sendClientMessage, notifyAdmin } from './notification.service.js';
+
+const CATALOG_NAMES = {
+  zero: 'Coca Zero 2 lts',
+  deli: 'Delivery',
+  capre: 'Canastita Capresse',
+  empaJYQ: 'Empanadita de Jamon y Queso',
+  empaPollo: 'Empanadita de Pollo',
+  milaPollo: 'Milanesa de Pollo',
+  pizeta: 'Pizeta',
+  mini: 'Mini Burger',
+  empaCarne: 'Empanadita de Carne',
+  sandwPollo: 'Sandwich de Mila de Pollo',
+  milaCarne: 'Milanesita de Carne',
+  pre: 'Combo Premium',
+  sprite: 'Sprite 2lts',
+  coca3: 'Coca 3 lts',
+  clasico: 'Combo Clasico',
+  fuga: 'Canastita Fugazeta',
+  sandJYQ: 'Sandw Jamon y Queso',
+  napo: 'Canastita Napolitana',
+  croq: 'Croquetas',
+  guara: 'Fanta Guarana 2lts',
+  extra: 'Extra',
+  naranja: 'Fanta Naranja 2lts',
+  coca2: 'Coca 2lts',
+  mbeju: 'Mbeju',
+  payagua: 'Payagua',
+  soo: "Chipa So'o",
+  mandio: 'Pastel Mandio'
+};
+
+/**
+ * Formatea una fecha de entrega en un texto legible y cálido para el cliente.
+ * @param {string} dateStr - Fecha en formato ISO o YYYY-MM-DD HH:MM:SS.
+ * @returns {string} - Fecha formateada.
+ */
+const formatDeliveryDateFriendly = (dateStr) => {
+  if (!dateStr) return 'A coordinar';
+  try {
+    const iso = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + '-03:00';
+    const d = new Date(iso);
+    const options = {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Etc/GMT+3'
+    };
+    const parts = new Intl.DateTimeFormat('es-ES', options).formatToParts(d).reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+    const dayName = parts.weekday.charAt(0).toUpperCase() + parts.weekday.slice(1);
+    return `${dayName}, ${parts.day} de ${parts.month} a las ${parts.hour}:${parts.minute} hs.`;
+  } catch (e) {
+    return dateStr;
+  }
+};
+
+/**
+ * Construye el mensaje de confirmación amigable para enviar al cliente.
+ */
+const buildClientConfirmationMessage = ({ orderName, contactName, deliveryDate, productos, total, isModification }) => {
+  const greeting = isModification ? '🤖 *¡Pedido Modificado!* ✍️' : '🤖 *¡Pedido Confirmado!* 🎉';
+  const nameText = contactName && contactName !== 'Desconocido' ? `*${contactName}*` : '';
+  const intro = isModification
+    ? `¡Hola${nameText ? ` ${nameText}` : ''}! Hemos actualizado tu pedido en nuestro sistema.`
+    : `¡Hola${nameText ? ` ${nameText}` : ''}! Tu pedido ha sido agendado exitosamente en el sistema.`;
+
+  const productLines = (productos || []).map(p => {
+    if (p.item_code === 'deli') {
+      const deliveryCost = Math.round((Number(p.cantidad) || 1) * 5000);
+      return `• Delivery: ₲ ${deliveryCost.toLocaleString('es-PY')}`;
+    }
+    const name = CATALOG_NAMES[p.item_code] || p.item_code;
+    if ((p.item_code === 'pre' || p.item_code === 'clasico') && p.cantidad % 1 !== 0) {
+      const units = Math.round(Number(p.cantidad) * 100);
+      return `• ${p.cantidad} ${name} (${units} unidades)`;
+    }
+    return `• ${p.cantidad} ${name}`;
+  }).join('\n');
+
+  const formattedTotal = total ? `₲ ${Math.round(Number(total)).toLocaleString('es-PY')}` : 'A calcular';
+  const formattedDate = formatDeliveryDateFriendly(deliveryDate);
+
+  return `${greeting}
+${intro}
+
+📋 *N° de Pedido:* \`${orderName}\`
+🕒 *Entrega programada:* ${formattedDate}
+
+📦 *Detalle del Pedido:*
+${productLines}
+
+💰 *Total a abonar:* ${formattedTotal}
+
+¡Muchas gracias por elegir Voraz! ✨ Si deseas realizar algún cambio o consulta, avísanos.`;
+};
 
 /**
  * Formatea los mensajes de la DB a un string simple para el prompt de la IA.
@@ -23,17 +120,14 @@ const formatMessagesForPrompt = (messages) => {
  */
 const getCurrentFormattedDateTime = () => {
   const now = new Date();
-  // Se usa 'Etc/GMT+3' para forzar un offset de UTC-3, ya que 'America/Asuncion'
-  // puede resolverse a UTC-4 en sistemas con datos de zona horaria desactualizados.
   const timeZone = 'Etc/GMT+3';
 
-  // Opciones para formatear la fecha y hora en la zona horaria correcta
   const options = {
     weekday: 'long',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    month: 'long', // Usamos el nombre del mes para evitar ambigüedad (04/05 vs 05/04)
+    month: 'long',
     year: 'numeric',
     hour12: false,
     timeZone: timeZone,
@@ -76,17 +170,15 @@ export const triggerOrderAnalysis = async (contactJid, orderSummaryText, action 
     const analysisResult = await queryIAService('/analyze-order', formattedPrompt);
 
     if (analysisResult && analysisResult.pedido_detectado) {
-      // Verificamos si la IA detectó una discrepancia
+      // Si la IA detecta discrepancia, se alerta al admin para auditoría pero se continúa con la creación
       if (analysisResult.discrepancia && analysisResult.discrepancia.detectada) {
-        console.warn(`[order.service] DISCREPANCIA DETECTADA: ${analysisResult.discrepancia.motivo}`);
+        console.warn(`[order.service] DISCREPANCIA DETECTADA (se procede a agendar igual): ${analysisResult.discrepancia.motivo}`);
 
-        const notifyMsg = `⚠️ *ALERTA DE DISCREPANCIA*\n\nIntentaste agendar un pedido, pero noté un error:\n_${analysisResult.discrepancia.motivo}_\n\nPor favor, verifica el historial del cliente y vuelve a enviar el comando corregido.`;
+        const notifyMsg = `⚠️ *DISCREPANCIA AUDITADA (Pedido agendado igual)*\n\nMotivo detectado:\n_${analysisResult.discrepancia.motivo}_\n\nEl pedido se generó en ERPNext y se confirmó al cliente. Revisa si necesitas realizar ajustes con /modificar.`;
         await notifyAdmin(notifyMsg);
-
-        return; // Detenemos el flujo, no creamos ni reemplazamos el pedido
       }
 
-      console.log(`[order.service] Pedido detectado sin discrepancias. Acción destinada: ${action}...`);
+      console.log(`[order.service] Pedido detectado. Acción destinada: ${action}...`);
       const newOrder = {
         remoteJid: contactJid,
         ...analysisResult
@@ -119,7 +211,6 @@ export const replaceOrder = async (orderData) => {
       contactName: contactName || "Desconocido",
       fecha_hora_entrega: orderData.fecha_hora_entrega,
       productos: orderData.productos,
-      //monto_total: parseInt(orderData.monto_total) || 0
     };
 
     const erpServiceUrl = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
@@ -128,15 +219,22 @@ export const replaceOrder = async (orderData) => {
     const response = await axios.post(`${erpServiceUrl}/api/orders/replace_latest`, payload);
 
     if (response.data && response.data.success) {
-      const { order_name, cancelled_order } = response.data;
+      const { order_name, grand_total, cancelled_order } = response.data;
       console.log(`[order.service] Reemplazo listo. Vieja: ${cancelled_order}, Nueva: ${order_name}`);
 
       // Actualizar estado semántico
       await updateChatAnalysis(orderData.remoteJid, 'Pedido Modificado');
 
-      // Notificar al admin por WhatsApp
-      const notifyMsg = `♻️ Pedido MODIFICADO en ERPNext\n📋 Orden nueva: ${order_name}\n❌ Orden cancelada: ${cancelled_order || 'ninguna'}\n👤 Cliente: ${payload.contactName}`;
-      await notifyAdmin(notifyMsg);
+      // Enviar confirmación directamente al cliente
+      const clientMsg = buildClientConfirmationMessage({
+        orderName: order_name,
+        contactName: payload.contactName,
+        deliveryDate: orderData.fecha_hora_entrega,
+        productos: orderData.productos,
+        total: grand_total,
+        isModification: true
+      });
+      await sendClientMessage(orderData.remoteJid, clientMsg);
     }
 
     return response.data;
@@ -145,7 +243,6 @@ export const replaceOrder = async (orderData) => {
     return null;
   }
 };
-
 
 /**
  * Crea un nuevo pedido directo en ERPNext a través del microservicio.
@@ -170,16 +267,23 @@ export const createOrder = async (orderData) => {
     const response = await axios.post(`${erpServiceUrl}/api/orders`, payload);
 
     if (response.data && response.data.success) {
-      const orderName = response.data.order_name;
-      console.log(`[order.service] Pedido creado en ERPNext con ID: ${orderName}`);
+      const { order_name, grand_total } = response.data;
+      console.log(`[order.service] Pedido creado en ERPNext con ID: ${order_name}, Total: ${grand_total}`);
 
       // Actualizar el estado de la conversación
       await updateChatAnalysis(orderData.remoteJid, 'Pedido Creado');
       console.log(`[order.service] Estado de conversación para ${orderData.remoteJid} actualizado a 'Pedido Creado'.`);
 
-      // Notificar al admin por WhatsApp
-      const notifyMsg = `✅ Pedido creado en ERPNext\n📋 Orden: ${orderName}\n👤 Cliente: ${payload.contactName}`;
-      await notifyAdmin(notifyMsg);
+      // Enviar confirmación directamente al cliente
+      const clientMsg = buildClientConfirmationMessage({
+        orderName: order_name,
+        contactName: payload.contactName,
+        deliveryDate: orderData.fecha_hora_entrega,
+        productos: orderData.productos,
+        total: grand_total,
+        isModification: false
+      });
+      await sendClientMessage(orderData.remoteJid, clientMsg);
     }
 
     return response.data;
