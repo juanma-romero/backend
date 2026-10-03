@@ -15,19 +15,21 @@ router.post('/webhook', async (req, res) => {
 
     // Solo procesamos mensajes nuevos, salientes y no privados (notas internas)
     if (event === 'message_created' && message_type === 'outgoing' && !isPrivate && content) {
-      // Obtener el JID del destinatario
-      // Chatwoot almacena el source_id o el teléfono del contacto
-      const contact = conversation?.meta?.sender || payload.sender;
-      const sourceId = conversation?.source_id;
+      // Obtener el JID del destinatario desde la conversación de Chatwoot
+      const sourceId = conversation?.contact_inbox?.source_id || conversation?.source_id;
+      const sender = conversation?.meta?.sender || payload?.sender;
       let targetJid = null;
 
-      if (sourceId && sourceId.includes('@s.whatsapp.net')) {
+      if (sourceId && (sourceId.includes('@s.whatsapp.net') || sourceId.includes('@lid'))) {
         targetJid = sourceId;
-      } else if (contact?.phone_number) {
-        const digits = contact.phone_number.replace(/\D/g, '');
+      } else if (sender?.identifier && (sender.identifier.includes('@s.whatsapp.net') || sender.identifier.includes('@lid'))) {
+        targetJid = sender.identifier;
+      } else if (sender?.phone_number) {
+        const digits = sender.phone_number.replace(/\D/g, '');
         targetJid = `${digits}@s.whatsapp.net`;
-      } else if (contact?.identifier && contact.identifier.includes('@s.whatsapp.net')) {
-        targetJid = contact.identifier;
+      } else if (sourceId) {
+        const digits = sourceId.replace(/\D/g, '');
+        targetJid = `${digits}@s.whatsapp.net`;
       }
 
       if (targetJid) {

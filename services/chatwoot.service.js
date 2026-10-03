@@ -7,11 +7,15 @@ let cachedInboxId = null;
 
 /**
  * Obtiene los headers de autenticación para la API de Chatwoot.
+ * Incluye 'api-access-token' con guión para evitar que Nginx Proxy descarte el header
+ * y 'X-Forwarded-Proto: https' para evitar que Rails fuerce redirecciones 301 en red interna.
  */
 const getHeaders = () => {
   const token = process.env.CHATWOOT_API_TOKEN;
   return {
-    api_access_token: token,
+    'api-access-token': token,
+    'api_access_token': token,
+    'X-Forwarded-Proto': 'https',
     'Content-Type': 'application/json',
   };
 };
