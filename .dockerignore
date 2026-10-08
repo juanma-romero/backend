@@ -1,0 +1,8 @@
+# Contexto de build para la imagen del backend.
+# El Dockerfile hace `COPY . .`: esto evita meter basura de desarrollo en la
+# imagen de producción.
+node_modules
+tests
+.git
+error.txt
+*.log

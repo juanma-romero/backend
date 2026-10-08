@@ -15,9 +15,10 @@
     - messageTimestamp es ISO 8601 (main.js hace new Date(ts*1000).toISOString())
     - key.id: 20 chars si fromMe:false (cliente), 32 hex si fromMe:true (propio)
 
-  Cómo usarlo: abrir este archivo (file:// o `python3 -m http.server`) con el
-  stack local levantado (`./dev.sh` en la raíz del proyecto). El backend de dev
-  escucha en el puerto 3100 (ver docker-compose.local.yml).
+  Cómo usarlo: con el stack local levantado (`./dev.sh` en la raíz del proyecto),
+  abrir http://localhost:8880/ — lo sirve el mock de dashWhat2 (tools/mock-dashwhat/),
+  que además recibe los mensajes salientes del backend y esta página los muestra.
+  El backend de dev escucha en el puerto 3100 (ver docker-compose.local.yml).
 -->
 <style>
   :root{
@@ -91,6 +92,14 @@
         </div>
       </div>
       <div class="hint">Local dev: <code>http://localhost:3100</code> · Prod: <code>http://&lt;host&gt;:3000</code> · cualquiera que reciba <code>POST /api/messages</code></div>
+
+      <label style="display:flex;align-items:center;gap:8px;margin:10px 0 0;cursor:pointer">
+        <input type="checkbox" id="outboxOn" checked style="width:auto">
+        <span style="color:var(--muted);font-size:12.5px">
+          Recibir mensajes salientes del backend (mock de dashWhat2)
+          <span class="pill" id="outboxPill">…</span>
+        </span>
+      </label>
 
       <div class="modes" id="modes">
         <div class="mode" data-mode="client">🧑 Cliente (escribe el contacto)</div>
@@ -326,10 +335,59 @@ $('sendBtn').onclick = send;
 $('clearThread').onclick = ()=>{ delete threads[threadKey()]; renderChat(); };
 $('url').addEventListener('change', ()=>{ try{ localStorage.setItem('voraz_sim_url', $('url').value); }catch{} });
 
+/* ---- salientes del backend (mock de dashWhat2) ------------------------ */
+/* El backend manda los mensajes al cliente/admin a POST /send-message del
+   mock-dashwhat; acá los levantamos por GET /outbox y los mostramos como
+   salientes (fromMe:true) en el hilo del jid correspondiente. */
+let outboxSeq = 0;
+
+function outboxBase(){
+  // Solo funciona si la página está servida por el mock (http://localhost:8880/).
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return null;
+  return location.origin;
+}
+function setOutboxPill(text){ document.getElementById('outboxPill').textContent = text; }
+
+async function pollOutbox(){
+  const base = outboxBase();
+  if(!base || !$('outboxOn').checked) return;
+  try{
+    const res = await fetch(`${base}/outbox?since=${outboxSeq}`, { cache:'no-store' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const msgs = data.messages || [];
+    setOutboxPill(msgs.length ? `recibidos: ${outboxSeq + msgs.length}` : 'activo');
+    for(const m of msgs){
+      outboxSeq = Math.max(outboxSeq, m.seq);
+      pushMsg(m.jid, { fromMe:true, text:m.message, ts: Date.parse(m.ts) || Date.now(),
+                       tag:'enviado · dashWhat2' });
+    }
+    if(msgs.length) renderChat();
+  }catch(e){
+    setOutboxPill('sin conectar');
+  }
+}
+
+function setupOutbox(){
+  const on = $('outboxOn');
+  if(!outboxBase()){
+    on.checked = false; on.disabled = true;
+    setOutboxPill('no disponible (serví la página con dashwhat_mock)');
+    return;
+  }
+  on.addEventListener('change', ()=>{
+    setOutboxPill(on.checked ? '…' : 'inactivo');
+    if(on.checked) pollOutbox();
+  });
+  pollOutbox();
+  setInterval(pollOutbox, 2000);
+}
+
 /* ---- init ------------------------------------------------------------- */
 (function init(){
   try{ const u=localStorage.getItem('voraz_sim_url'); if(u) $('url').value=u; }catch{}
   renderContactSelect(); renderModes(); renderChips(); renderChat(); previewPayload();
+  setupOutbox();
 })();
 </script>
 </body>
