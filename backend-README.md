@@ -321,21 +321,37 @@ Admin escribe /hoy → Baileys → POST /api/messages
 
 ---
 
-## Simuladores de Pruebas (Mensajes y Admin - Solo en entorno Local)
+## Simulador de Pruebas (solo en entorno Local)
 
-El proyecto incluye simuladores HTML para probar la lógica (mensajes de clientes y comandos de administrador) sin enviar mensajes reales por WhatsApp.
+Reemplaza al servidor Baileys (`dashWhat2`) para probar la lógica **sin enviar
+mensajes reales por WhatsApp**: arma el mismo payload que `dashWhat2` postea a
+`POST /api/messages` y lo envía al backend.
 
-- **Ubicaciones**: `tests/message_simulator.html` y `tests/admin_simulator.html`
-- **Uso Rápido (Recomendado)**:
-  1. Desde la carpeta raíz del proyecto (`voraz-main`), ejecutar: `./start_services.sh`
-  2. Este script inicia automáticamente la API, la IA, el ERP y el servidor de tests.
-  3. Abrir el simulador de mensajes: `http://localhost:5000/message_simulator.html`
-  4. Abrir el simulador de administrador: `http://localhost:5000/admin_simulator.html`
-  5. Para detener todos los servicios, presionar `Ctrl + C` en esa terminal.
+- **Archivo**: `tests/chat_simulator.html` (un solo archivo, sin dependencias).
+- **Modos**: 🧑 Cliente (con un select de 4 contactos simulados) · 🛠️ Admin en su
+  propio chat (comandos `/…`) · 🤖 Admin escribiendo en el chat de un contacto
+  (frases `Entonces te agendo:` / `Modifico tu pedido:`).
+- **Extra**: muestra el payload en vivo, el último payload enviado y la respuesta
+  del backend (`{reply, targetJid}` de los comandos).
 
-- **Uso Manual (Solo servidor de tests)**:
-  1. Dentro de la carpeta `backend`, ejecutar: `npx serve -l 5000 tests`
-  2. Abrir las URLs indicadas arriba.
+**Uso (recomendado):**
+
+1. Levantar el stack local desde la raíz del proyecto: `./dev.sh`
+   (el backend queda en `localhost:3100`; en local `erp_service` corre un **mock**
+   en memoria, ver `tools/mock-erp/`, porque no hay ERPNext).
+2. Servir el archivo desde la carpeta `tests` y abrirlo:
+   ```bash
+   python3 -m http.server 5099
+   ```
+   → `http://localhost:5099/chat_simulator.html`
+3. En el simulador, poner la **URL del backend**: `http://localhost:3100`.
+
+> `dashWhat2` **no** se levanta en local: una segunda sesión de WhatsApp puede
+> invalidar la de producción.
+
+**Uso manual (sin el simulador)**: cualquier cliente HTTP que haga
+`POST http://localhost:3100/api/messages` con el cuerpo
+`{ "message": { type, content, key, messageTimestamp, pushName } }` sirve.
 
 ---
 

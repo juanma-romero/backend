@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voraz · Simulador de chat (reemplazo local de dashWhat2)</title>
+<!--
+  Simulador de chat para desarrollo local.
+  Reemplaza al servidor Baileys (dashWhat2) SIN conectarse a WhatsApp:
+  arma el mismo payload que dashWhat2/api/main.js envía a POST /api/messages
+  y lo postea al backend para que corra el flujo real.
+
+  Formato del payload (idéntico a main.js, líneas 136-143):
+    { message: { type, content, key:{remoteJid, fromMe, id}, messageTimestamp, pushName } }
+    - messageTimestamp es ISO 8601 (main.js hace new Date(ts*1000).toISOString())
+    - key.id: 20 chars si fromMe:false (cliente), 32 hex si fromMe:true (propio)
+
+  Cómo usarlo: abrir este archivo (file:// o `python3 -m http.server`) con el
+  stack local levantado (`./dev.sh` en la raíz del proyecto). El backend de dev
+  escucha en el puerto 3100 (ver docker-compose.local.yml).
+-->
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2b303b;
+    --txt:#e8eaf0; --muted:#95a0b4; --accent:#25d366; --accent2:#128c7e;
+    --in:#222834; --out:#134e3a; --warn:#ffb020; --err:#ff5c5c; --ok:#25d366;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;}
+  .app{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:14px;
+    grid-template-columns:1.15fr .85fr;}
+  @media (max-width:900px){.app{grid-template-columns:1fr}}
+  h1{font-size:17px;margin:0}
+  h1 small{color:var(--muted);font-weight:400;font-size:12px;display:block;margin-top:3px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:0 0 10px;font-weight:600}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+  input,select,textarea,button{font:inherit;color:var(--txt)}
+  input[type=text],select,textarea{width:100%;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  textarea{resize:vertical;min-height:64px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{flex:1;min-width:150px}
+  .modes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .mode{cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+    border-radius:999px;padding:6px 12px;font-size:12.5px;color:var(--muted)}
+  .mode.on{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{cursor:pointer;font-size:11.5px;border:1px dashed var(--line);background:transparent;
+    color:var(--muted);border-radius:6px;padding:3px 8px}
+  .chip:hover{color:var(--txt);border-color:var(--accent)}
+  .send{padding:9px 18px;border:0;border-radius:8px;background:var(--accent);
+    color:#06251a;font-weight:700;cursor:pointer}
+  .send:disabled{opacity:.5;cursor:not-allowed}
+  .ghost{background:transparent;border:1px solid var(--line);border-radius:8px;
+    padding:8px 12px;color:var(--muted);cursor:pointer;font-size:12px}
+  .chat{height:340px;overflow-y:auto;background:
+    radial-gradient(circle at 20% 10%,#1b2029,#12151b);border:1px solid var(--line);
+    border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
+  .bubble{max-width:78%;padding:7px 11px;border-radius:12px;font-size:13.5px;
+    white-space:pre-wrap;word-break:break-word;position:relative}
+  .bubble.in{align-self:flex-start;background:var(--in);border:1px solid var(--line);border-bottom-left-radius:3px}
+  .bubble.out{align-self:flex-end;background:var(--out);border-bottom-right-radius:3px}
+  .bubble .meta{font-size:10.5px;color:var(--muted);margin-top:4px;display:block}
+  .bubble.out .meta{color:#a9d9c6}
+  .empty{color:var(--muted);font-size:12.5px;margin:auto;text-align:center}
+  pre{background:#0c0e13;border:1px solid var(--line);border-radius:8px;padding:10px;
+    overflow:auto;max-height:300px;font-size:12px;margin:0;color:#cfe3ff}
+  .status{font-size:12px;margin-top:8px;min-height:16px}
+  .status.ok{color:var(--ok)} .status.err{color:var(--err)} .status.warn{color:var(--warn)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:6px}
+  .pill{display:inline-block;font-size:11px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:999px;padding:2px 8px;color:var(--muted);margin-left:6px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ─────────────── Columna izquierda: configuración + chat ─────────────── -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <h1>Simulador de chat Voraz
+        <small>Reemplaza a dashWhat2 en local · arma el payload de Baileys y lo postea a <code>/api/messages</code></small>
+      </h1>
+      <div class="row" style="margin-top:12px">
+        <div style="flex:2">
+          <label>URL del backend (<code>…/api/messages</code>)</label>
+          <input type="text" id="url" value="http://localhost:3100">
+        </div>
+      </div>
+      <div class="hint">Local dev: <code>http://localhost:3100</code> · Prod: <code>http://&lt;host&gt;:3000</code> · cualquiera que reciba <code>POST /api/messages</code></div>
+
+      <div class="modes" id="modes">
+        <div class="mode" data-mode="client">🧑 Cliente (escribe el contacto)</div>
+        <div class="mode" data-mode="admin-self">🛠️ Admin · mi chat (comandos /…)</div>
+        <div class="mode" data-mode="admin-chat">🤖 Admin · en el chat del contacto</div>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label>Contacto simulado <span class="pill" id="ctxpill"></span></label>
+          <select id="contact"></select>
+        </div>
+      </div>
+
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="chatTitle">Conversación</h2>
+      <div class="chat" id="chat"><div class="empty">Sin mensajes todavía.<br>Elegí un modo y escribí abajo.</div></div>
+      <div class="row" style="margin-top:12px">
+        <div style="flex:1">
+          <textarea id="text" placeholder="Escribí un mensaje…  (Enter envía · Shift+Enter salto de línea)"></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;justify-content:space-between">
+        <div style="display:flex;gap:8px">
+          <button class="send" id="sendBtn">Enviar ➤</button>
+          <button class="ghost" id="clearThread">Limpiar conversación</button>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────── Columna derecha: payload + respuesta ─────────────── -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <h2>Payload que se enviará (preview)</h2>
+      <pre id="payloadPreview">{}</pre>
+    </div>
+    <div class="card">
+      <h2>Último payload enviado</h2>
+      <pre id="payloadSent">—</pre>
+      <h2 style="margin-top:14px">Respuesta del backend</h2>
+      <pre id="response">—</pre>
+      <div class="status" id="netStatus"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ────────────────────────────────────────────────────────────────────────
+   Configuración editable
+   ──────────────────────────────────────────────────────────────────────── */
+
+// 4 contactos simulados (editá libremente). JID numérico = compatible con ERPNext.
+const CONTACTS = [
+  { name: 'Sol',    jid: '595981111111@s.whatsapp.net' },
+  { name: 'Ramiro', jid: '595982222222@s.whatsapp.net' },
+  { name: 'Lucía',  jid: '595983333333@s.whatsapp.net' },
+  { name: 'Diego',  jid: '595984444444@s.whatsapp.net' },
+];
+
+// Número administrador: debe figurar en backend/admin-phones.json para que
+// el backend lo reconozca como admin (isAdmin → valores del JSON).
+const ADMIN = { name: 'Voraz', jid: '595985214420@s.whatsapp.net' };
+
+// Frases clave que disparan el flujo de pedido cuando las escribe el admin
+// dentro del chat de un cliente (ver message_events/order.handler.js).
+const TRIGGERS = { create: 'Entonces te agendo: ', replace: 'Modifico tu pedido: ' };
+
+const QUICK = {
+  'client':    ['Hola, ¿hacen bocaditos para eventos?', '¿Cuánto sale para 100 personas?', '¿Tenés opciones vegetarianas?'],
+  'admin-self':['/hoy', '/manana', '/listar', '/agendar +595 981 111111 1 combo x30', '/consultar ventas del mes'],
+  'admin-chat':[TRIGGERS.create, TRIGGERS.replace],
+};
+
+/* ──────────────────────────────────────────────────────────────────────── */
+
+const $ = (id) => document.getElementById(id);
+const state = { mode: 'client', contactIndex: 0 };
+let threads = {};               // { remoteJid: [ {fromMe, text, ts} ] }
+let lastPayload = null;
+
+/* ---- utilidades de id (cosmético, imita a Baileys) -------------------- */
+function randHex(n){ let s=''; const h='0123456789ABCDEF';
+  for(let i=0;i<n;i++) s+=h[Math.floor(Math.random()*16)]; return s; }
+function genId(fromMe){
+  // main.js no genera ids: los hereda de Baileys.
+  // Recibidos (fromMe:false): 20 chars. Propios (fromMe:true): 32 hex.
+  return fromMe ? ('A5'+randHex(30)) : ('3A'+randHex(18));
+}
+
+/* ---- contexto según modo --------------------------------------------- */
+function ctx(){
+  const c = CONTACTS[state.contactIndex];
+  if (state.mode === 'client')     return { fromMe:false, remoteJid:c.jid,    pushName:c.name,    who:'cliente',            contact:c };
+  if (state.mode === 'admin-self') return { fromMe:true,  remoteJid:ADMIN.jid, pushName:ADMIN.name, who:'admin (comando)',    contact:c };
+  /* admin-chat */                 return { fromMe:true,  remoteJid:c.jid,    pushName:ADMIN.name, who:'admin (en chat)',    contact:c };
+}
+
+/* ---- construcción del payload (espejo de main.js) -------------------- */
+function buildPayload(text, c, id){
+  // Orden: { ...messageData, key, messageTimestamp, pushName }  (igual que main.js)
+  return {
+    type: 'text',
+    content: text,
+    key: { remoteJid: c.remoteJid, fromMe: c.fromMe, id: id },
+    messageTimestamp: new Date().toISOString(),
+    pushName: c.pushName,
+  };
+}
+function previewPayload(){
+  const c = ctx();
+  const text = $('text').value;
+  const p = buildPayload(text, c, '<se genera al enviar>');
+  $('payloadPreview').textContent = JSON.stringify({ message: p }, null, 2);
+}
+
+/* ---- render ----------------------------------------------------------- */
+function renderModes(){
+  document.querySelectorAll('#modes .mode').forEach(el =>
+    el.classList.toggle('on', el.dataset.mode === state.mode));
+  // El selector de contacto solo aplica en modos que usan un contacto.
+  $('contact').closest('.row').style.opacity = (state.mode === 'admin-self') ? .45 : 1;
+  $('contact').disabled = (state.mode === 'admin-self');
+}
+function renderContactSelect(){
+  const sel = $('contact');
+  sel.innerHTML = '';
+  CONTACTS.forEach((c,i)=>{
+    const o = document.createElement('option');
+    o.value = i; o.textContent = `${c.name} · ${c.jid.split('@')[0]}`;
+    sel.appendChild(o);
+  });
+  sel.value = state.contactIndex;
+}
+function renderChips(){
+  const box = $('chips'); box.innerHTML='';
+  (QUICK[state.mode]||[]).forEach(t=>{
+    const b=document.createElement('span');
+    b.className='chip'; b.textContent = t.length>34 ? t.slice(0,34)+'…' : t;
+    b.title = t;
+    b.onclick = ()=>{ $('text').value = t; $('text').focus(); previewPayload(); };
+    box.appendChild(b);
+  });
+}
+function threadKey(){ return ctx().remoteJid; }
+function renderChat(){
+  const box = $('chat'); box.innerHTML='';
+  const msgs = threads[threadKey()] || [];
+  if(!msgs.length){
+    box.innerHTML = '<div class="empty">Sin mensajes todavía.<br>Elegí un modo y escribí abajo.</div>';
+  } else {
+    msgs.forEach(m=>{
+      const d=document.createElement('div');
+      d.className='bubble '+(m.fromMe?'out':'in');
+      const t=new Date(m.ts).toLocaleTimeString('es-PY',{hour:'2-digit',minute:'2-digit'});
+      d.innerHTML = escapeHtml(m.text) + `<span class="meta">${t}${m.tag?' · '+escapeHtml(m.tag):''}</span>`;
+      box.appendChild(d);
+    });
+  }
+  box.scrollTop = box.scrollHeight;
+  const c = ctx();
+  $('chatTitle').innerHTML = `Conversación <span class="pill">${escapeHtml(ctx().who)} · ${escapeHtml(c.remoteJid.split('@')[0])}</span>`;
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+
+function pushMsg(remoteJid, msg){
+  (threads[remoteJid] ||= []).push(msg);
+}
+
+/* ---- envío ------------------------------------------------------------ */
+async function send(){
+  const text = $('text').value;
+  if(!text.trim()){ return; }
+  const c = ctx();
+  const payload = buildPayload(text, c, genId(c.fromMe));
+  lastPayload = payload;
+  $('payloadSent').textContent = JSON.stringify({ message: payload }, null, 2);
+  $('response').textContent = '…';
+  $('netStatus').textContent = '';
+  $('netStatus').className = 'status';
+
+  // 1) Mostrar el mensaje en el chat local
+  pushMsg(c.remoteJid, { fromMe: c.fromMe, text, ts: Date.now(), tag: c.who });
+  $('text').value = ''; renderChat(); previewPayload();
+
+  // Tolerante: acepta tanto la base (http://host:3100) como la URL completa
+  // (.../api/messages), para no duplicar el path.
+  let base = $('url').value.trim().replace(/\/+$/,'');
+  base = base.replace(/\/api\/messages$/,'');
+  const url = base + '/api/messages';
+  const t0 = performance.now();
+  try{
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ message: payload }),
+    });
+    const dt = Math.round(performance.now()-t0);
+    const raw = await res.text();
+    let data = null; try{ data = raw ? JSON.parse(raw) : null; }catch{ data = raw; }
+
+    $('response').textContent = JSON.stringify({ status: res.status, body: data }, null, 2);
+    setNet(res.ok?'ok':'err', `HTTP ${res.status} · ${dt} ms · ${url}`);
+
+    // 2) Si el backend devolvió { reply, targetJid } (comando de admin),
+    //    lo mostramos como mensaje entrante (lo que dashWhat2 enviaría por WA).
+    if(data && data.reply){
+      const tgt = data.targetJid || c.remoteJid;
+      pushMsg(tgt, { fromMe:false, text:data.reply, ts:Date.now(), tag:'respuesta backend' });
+      if(tgt === threadKey()) renderChat();
+    }
+  }catch(err){
+    setNet('err', `No se pudo conectar a ${url} — ${err.message}. ¿Está levantado el stack local? (./dev.sh)`);
+    $('response').textContent = '—';
+  }
+}
+function setNet(kind, msg){ const el=$('netStatus'); el.className='status '+kind; el.textContent=msg; }
+
+/* ---- eventos ---------------------------------------------------------- */
+function selectMode(m){ state.mode=m; renderModes(); renderChips(); renderChat(); previewPayload(); }
+
+document.querySelectorAll('#modes .mode').forEach(el=>{
+  el.onclick = ()=> selectMode(el.dataset.mode);
+});
+$('contact').onchange = e => { state.contactIndex = +e.target.value; renderChat(); previewPayload(); };
+$('text').addEventListener('input', previewPayload);
+$('text').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+$('sendBtn').onclick = send;
+$('clearThread').onclick = ()=>{ delete threads[threadKey()]; renderChat(); };
+$('url').addEventListener('change', ()=>{ try{ localStorage.setItem('voraz_sim_url', $('url').value); }catch{} });
+
+/* ---- init ------------------------------------------------------------- */
+(function init(){
+  try{ const u=localStorage.getItem('voraz_sim_url'); if(u) $('url').value=u; }catch{}
+  renderContactSelect(); renderModes(); renderChips(); renderChat(); previewPayload();
+})();
+</script>
+</body>
+</html>
