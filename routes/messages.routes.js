@@ -5,6 +5,7 @@ import { handleAdminCommand } from '../services/command.handler.js';
 import { processMessage } from '../services/message.processor.js';
 import { getMessageText } from '../services/format.service.js';
 import { forwardIncomingToChatwoot } from '../services/chatwoot.service.js';
+import { isFilteredContact } from '../services/contact_filter.service.js';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
@@ -63,6 +64,13 @@ router.post('/messages', async (req, res) => {
       return res.sendStatus(200);
     }
   } else {
+    // Verificar si el contacto está filtrado (proveedor, delivery, familiar, etc.)
+    const filtered = isFilteredContact(messageData.key.remoteJid);
+    if (filtered) {
+      console.log(`[Router /messages] Contacto filtrado (${filtered.role || 'ignorado'}${filtered.name ? ' - ' + filtered.name : ''}): ${messageData.key.remoteJid}. Mensaje ignorado.`);
+      return res.sendStatus(200);
+    }
+
     // Mensaje de cliente regular - comportamiento original
     console.log(`[Router /messages] Procesando mensaje de cliente: ${messageData.key.remoteJid}`);
 

@@ -4,8 +4,10 @@ import cors from 'cors';
 import { connectToDatabase } from './db.js';
 import messagesRouter from './routes/messages.routes.js'; // Importamos el router
 import chatwootRouter from './routes/chatwoot.routes.js';
+import filteredContactsRouter from './routes/filtered-contacts.routes.js';
 // Importamos ambos setters y les damos alias para claridad
 import { setCollection as setMongoCollection, setDbClient } from './services/mongo.service.js'; 
+import { initContactFilterService } from './services/contact_filter.service.js';
 import { startAgenda } from './services/agenda.service.js';
 
 const app = express();
@@ -24,6 +26,9 @@ async function initializeDatabase() {
     setMongoCollection(chatCollection); 
     setDbClient(client);
 
+    // Inicializar servicio de filtro de contactos (proveedores, deliverys, familiares)
+    await initContactFilterService(db);
+
     console.log("Base de datos inicializada y dependencias inyectadas en los servicios.");
     
     // Iniciar Agenda después de que MongoDB esté conectado
@@ -38,6 +43,7 @@ initializeDatabase();
 
 // Rutas de la API
 app.use('/api', messagesRouter);
+app.use('/api', filteredContactsRouter);
 app.use('/api/chatwoot', chatwootRouter);
 
 // ----------------------------------

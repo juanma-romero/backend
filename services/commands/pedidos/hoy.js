@@ -1,6 +1,6 @@
 // services/commands/hoy.js
 import axios from 'axios';
-import { getStartOfDayInTimezone } from '../../date.service.js';
+import { getDateStringInTimezone } from '../../date.service.js';
 import { formatOrdersForWhatsapp } from '../../format.service.js';
 
 /**
@@ -11,14 +11,7 @@ export const execute = async () => {
   try {
     const ERP_SERVICE_URL = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
 
-    const timeZone = 'Etc/GMT+3';
-    const now = new Date();
-    const startOfToday = getStartOfDayInTimezone(now, timeZone);
-    
-    const yyyy = startOfToday.getFullYear();
-    const mm = String(startOfToday.getMonth() + 1).padStart(2, '0');
-    const dd = String(startOfToday.getDate()).padStart(2, '0');
-    const targetDate = `${yyyy}-${mm}-${dd}`;
+    const targetDate = getDateStringInTimezone();
 
     console.log(`[Command hoy] Petición a ERP Service: GET ${ERP_SERVICE_URL}/api/orders/pending?date=${targetDate}`);
 

@@ -95,7 +95,7 @@ Orquesta la creación, modificación y confirmación directa de pedidos hacia el
   - Desglose de productos y costo de delivery expresado en Guaraníes (₲).
   - Total a abonar en Guaraníes (₲).
 
-**Zona horaria**: Usa `Etc/GMT+3` (UTC-3 fijo) para evitar variaciones estacionales al construir el prompt de fecha/hora.
+**Zona horaria**: Usa `America/Asuncion` (UTC-3 oficial de Paraguay) para construir el prompt y unificar el cálculo de fechas y horas en todo el sistema.
 
 ---
 

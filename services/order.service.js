@@ -50,7 +50,7 @@ const formatDeliveryDateFriendly = (dateStr) => {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-      timeZone: 'Etc/GMT+3'
+      timeZone: 'America/Asuncion'
     };
     const parts = new Intl.DateTimeFormat('es-ES', options).formatToParts(d).reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
     const dayName = parts.weekday.charAt(0).toUpperCase() + parts.weekday.slice(1);
@@ -120,7 +120,7 @@ const formatMessagesForPrompt = (messages) => {
  */
 const getCurrentFormattedDateTime = () => {
   const now = new Date();
-  const timeZone = 'Etc/GMT+3';
+  const timeZone = 'America/Asuncion';
 
   const options = {
     weekday: 'long',
@@ -142,8 +142,9 @@ const getCurrentFormattedDateTime = () => {
   }, {});
 
   const dayOfWeek = dateParts.weekday.charAt(0).toUpperCase() + dateParts.weekday.slice(1);
+  const isoDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
 
-  return `${dayOfWeek}, ${dateParts.day} de ${dateParts.month} de ${dateParts.year} a las ${dateParts.hour}:${dateParts.minute}`;
+  return `${dayOfWeek}, ${dateParts.day} de ${dateParts.month} de ${dateParts.year} a las ${dateParts.hour}:${dateParts.minute} (fecha ISO actual: ${isoDate}, zona horaria: America/Asuncion)`;
 };
 
 /**

@@ -1,6 +1,6 @@
 // services/commands/manana.js
 import axios from 'axios';
-import { getStartOfDayInTimezone } from '../../date.service.js';
+import { getDateStringInTimezone } from '../../date.service.js';
 import { formatOrdersForWhatsapp } from '../../format.service.js';
 
 /**
@@ -11,17 +11,8 @@ export const execute = async () => {
   try {
     const ERP_SERVICE_URL = process.env.ERP_SERVICE_URL || 'http://localhost:8001';
 
-    const timeZone = 'Etc/GMT+3';
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(now.getDate() + 1);
-
-    const startOfTomorrow = getStartOfDayInTimezone(tomorrow, timeZone);
-    
-    const yyyy = startOfTomorrow.getFullYear();
-    const mm = String(startOfTomorrow.getMonth() + 1).padStart(2, '0');
-    const dd = String(startOfTomorrow.getDate()).padStart(2, '0');
-    const targetDate = `${yyyy}-${mm}-${dd}`;
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const targetDate = getDateStringInTimezone(tomorrow);
 
     console.log(`[Command manana] Petición a ERP Service: GET ${ERP_SERVICE_URL}/api/orders/pending?date=${targetDate}`);
 
