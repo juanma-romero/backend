@@ -6,6 +6,7 @@ import { processMessage } from '../services/message.processor.js';
 import { getMessageText } from '../services/format.service.js';
 import { forwardIncomingToChatwoot } from '../services/chatwoot.service.js';
 import { isFilteredContact } from '../services/contact_filter.service.js';
+import { logPayloadAudit } from '../services/payload_audit.js';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
@@ -30,6 +31,12 @@ router.post('/messages', async (req, res) => {
     console.warn("[Router /messages] Petición recibida sin cuerpo de mensaje.");
     return res.status(400).send('Cuerpo del mensaje requerido.');
   }
+
+  // --- Auditoría temporal del payload de WhatsApp (P0 / Idea #20 del backlog) ---
+  // Una línea JSON al stdout, con los JIDs enmascarados y sin contenido del mensaje.
+  // Se apaga con LOG_RAW_MESSAGES=false en el compose. Ver services/payload_audit.js.
+  logPayloadAudit(messageData);
+  // --- fin auditoría ---
 
   // Extraer texto del payload dinámico de Baileys 
   const textContent = getMessageText(messageData);
