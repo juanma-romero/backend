@@ -5,57 +5,77 @@ export const aliases = ['cobrado', 'cobra', 'cobrar'];
 
 /**
  * Ejecuta el comando para registrar un pago de un pedido en ERPNext.
- * Uso: /cobrar <ID_ERP_o_JID> [monto] [metodo]
+ * Uso: /cobrar <ID_ERP | Telefono | Nombre_Cliente> [monto] [metodo]
  * Ejemplos:
  *   /cobrar SAL-ORD-2026-00349
  *   /cobrar SAL-ORD-2026-00349 transferencia
  *   /cobrar SAL-ORD-2026-00349 50000 efectivo
- *   /cobrar 19292551824@s.whatsapp.net 198 mil transferencia   ← busca último pedido del cliente
+ *   /cobrar +595 971 166266 transferencia
+ *   /cobrar Ramiro transferencia
+ *   /cobrar Sol 15000 efectivo
  */
 export const execute = async (args) => {
   if (args.length < 1) {
-    return "Uso incorrecto. Formato: /cobrar <ID_ERP_o_Telefono> [monto] [metodo]\nEjemplo: /cobrar SAL-ORD-2026-00349 transferencia\nO bien: /cobrar +595 971 166266 transferencia";
+    return "Uso incorrecto. Formato: /cobrar <ID_Orden | Telefono | Nombre> [monto] [metodo]\nEjemplos:\n  /cobrar SAL-ORD-2026-00349 transferencia\n  /cobrar +595 971 166266 transferencia\n  /cobrar Sol efectivo";
   }
 
   let orderId = '';
-  let phoneArgsCount = 0;
+  let consumedArgsCount = 0;
 
-  const firstArg = args[0].toUpperCase();
-  if (firstArg.startsWith('SAL') || firstArg.includes('-')) {
-    orderId = firstArg;
-    phoneArgsCount = 1;
+  const firstArg = args[0];
+  const upperFirst = firstArg.toUpperCase();
+
+  // 1. Caso ID de orden directa de ERP (ej. SAL-ORD-..., SALES-ORD-...)
+  if (upperFirst.startsWith('SAL') || (firstArg.includes('-') && !firstArg.includes('@') && /\d/.test(firstArg) && /[a-zA-Z]/.test(firstArg))) {
+    orderId = upperFirst;
+    consumedArgsCount = 1;
   } else if (firstArg.includes('@')) {
     orderId = firstArg;
-    phoneArgsCount = 1;
-  } else {
-    // Asumimos que es un número de teléfono con posibles espacios (ej. +595 971 166266)
+    consumedArgsCount = 1;
+  } else if (/^\+?\d/.test(firstArg)) {
+    // 2. Comienza con dígito o +, probable número de teléfono con espacios
     let accumulatedDigits = '';
-    let rawPhoneStr = '';
-
     for (let i = 0; i < args.length; i++) {
       const part = args[i];
-      rawPhoneStr += (i > 0 ? ' ' : '') + part;
-      phoneArgsCount++;
-      
       const digitsInPart = part.replace(/\D/g, '');
+      // Si la palabra no tiene dígitos (ej. 'transferencia', 'mil'), paramos
+      if (!digitsInPart) break;
       accumulatedDigits += digitsInPart;
-
-      // Si ya acumulamos 10 o más dígitos, asumimos que terminamos de leer el teléfono
-      if (accumulatedDigits.length >= 10) {
-        break;
-      }
+      consumedArgsCount++;
+      if (accumulatedDigits.length >= 9) break;
     }
 
-    if (accumulatedDigits.length < 10) {
-      phoneArgsCount = 1;
-      orderId = firstArg;
-    } else {
+    if (accumulatedDigits.length >= 6) {
       let contactJid = accumulatedDigits;
       if (contactJid.startsWith('0') && contactJid.length === 10) {
         contactJid = '595' + contactJid.slice(1);
       }
-      contactJid += '@s.whatsapp.net';
-      orderId = contactJid;
+      orderId = contactJid.includes('@') ? contactJid : `${contactJid}@s.whatsapp.net`;
+    } else {
+      orderId = firstArg;
+      consumedArgsCount = 1;
+    }
+  } else {
+    // 3. Caso Nombre de cliente (puede ser compuesto, ej: "Maria Jose")
+    const nameParts = [];
+    const paymentKeywords = ['transferencia', 'transf', 'banco', 'efectivo', 'cash', 'mil'];
+
+    for (let i = 0; i < args.length; i++) {
+      const part = args[i];
+      const lowerPart = part.toLowerCase();
+      // Si encontramos un método conocido o un número puro/con decimales, termina el nombre
+      if (paymentKeywords.includes(lowerPart) || /^[\d.,]+(mil)?$/i.test(part)) {
+        break;
+      }
+      nameParts.push(part);
+      consumedArgsCount++;
+    }
+
+    if (nameParts.length > 0) {
+      orderId = nameParts.join(' ');
+    } else {
+      orderId = firstArg;
+      consumedArgsCount = 1;
     }
   }
 
@@ -63,7 +83,7 @@ export const execute = async (args) => {
   let method = 'efectivo'; // por defecto
 
   // Parsear resto de argumentos buscando monto y método
-  const remainingArgs = args.slice(phoneArgsCount).map(a => a.toLowerCase());
+  const remainingArgs = args.slice(consumedArgsCount).map(a => a.toLowerCase());
 
   // Buscar método de pago
   if (remainingArgs.some(a => ['transferencia', 'transf', 'banco'].includes(a))) {
