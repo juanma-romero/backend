@@ -1,5 +1,6 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { forwardIncomingToChatwoot } from './chatwoot.service.js';
 
 dotenv.config();
 
@@ -42,6 +43,15 @@ export async function sendClientMessage(jid, message) {
   try {
     await axios.post(`${dashUrl}/send-message`, { jid, message });
     console.log(`[notification.service] Mensaje enviado al cliente (${jid}).`);
+
+    // Espejar automáticamente en Chatwoot como mensaje saliente de la empresa/bot
+    forwardIncomingToChatwoot({
+      jid,
+      text: message,
+      fromMe: true
+    }).catch((cwErr) => {
+      console.warn('[notification.service] Error al espejar mensaje saliente en Chatwoot:', cwErr.message);
+    });
   } catch (err) {
     console.error(`[notification.service] Error al enviar mensaje a cliente ${jid} (¿Servidor Baileys apagado?):`, err.message);
     console.log(`\n=== 📱 SIMULADOR MENSAJE A CLIENTE (${jid}) ===\n${message}\n==============================================\n`);
