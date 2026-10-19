@@ -1,6 +1,7 @@
 // services/message.processor.js
 import { handleOrderTrigger } from './message_events/order.handler.js';
 import { handleConversationAnalysis } from './message_events/analysis.handler.js';
+import { handleClientResponseForPendingOrder } from './pending_orders.service.js';
 
 // Usamos un Map para manejar los temporizadores de análisis pendientes por cada chat.
 // Este Map se gestionará aquí, en el procesador central.
@@ -19,9 +20,19 @@ export const processMessage = async (messageData) => {
   // 1. Intentar manejar el evento de agendar pedido primero.
   // La función handleOrderTrigger devuelve `true` si se encargó del mensaje.
   const orderHandled = await handleOrderTrigger(messageData, pendingAnalysisTimers);
-
-  // 2. Si el mensaje no fue para agendar un pedido, procedemos con el análisis general.
-  if (!orderHandled) {
-    handleConversationAnalysis(messageData, pendingAnalysisTimers);
+  if (orderHandled) {
+    return;
   }
+
+  // 2. Si el mensaje proviene del cliente (no es fromMe), verificar si tiene un pedido pendiente por confirmar.
+  if (!messageData.key.fromMe) {
+    const pendingHandled = await handleClientResponseForPendingOrder(messageData);
+    if (pendingHandled) {
+      console.log(`[MessageProcessor] Mensaje de cliente procesado por el flujo de confirmación de pedido pendiente.`);
+      return;
+    }
+  }
+
+  // 3. Si el mensaje no fue para agendar ni confirmó/modificó un pedido pendiente, procedemos con el análisis general.
+  handleConversationAnalysis(messageData, pendingAnalysisTimers);
 };

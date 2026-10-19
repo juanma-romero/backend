@@ -13,14 +13,15 @@ const IA_SERVICE_URL = process.env.IA_SERVICE_URL;
  * @returns {Promise<Object|null>} - El resultado del análisis en formato JSON.
  */
 export const queryIAService = async (endpoint, prompt, extraPayload = null) => {
-  if (!IA_SERVICE_URL) {
+  const serviceUrl = process.env.IA_SERVICE_URL;
+  if (!serviceUrl) {
     console.error("[ia.service] IA_SERVICE_URL no está definida en las variables de entorno.");
     return null;
   }
   const body = extraPayload ?? { prompt };
   try {
-    console.log(`[ia.service] Enviando petición a ${IA_SERVICE_URL}${endpoint}.`);
-    const response = await axios.post(`${IA_SERVICE_URL}${endpoint}`, body);
+    console.log(`[ia.service] Enviando petición a ${serviceUrl}${endpoint}.`);
+    const response = await axios.post(`${serviceUrl}${endpoint}`, body);
     return response.data;
   } catch (error) {
     const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;

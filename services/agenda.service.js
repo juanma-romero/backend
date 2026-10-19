@@ -2,6 +2,7 @@ import { Agenda } from 'agenda';
 import { MongoBackend } from '@agendajs/mongo-backend';
 import { getPendingChats } from './mongo.service.js';
 import { notifyAdmin } from './notification.service.js';
+import { checkExpiredPendingOrders } from './pending_orders.service.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -42,6 +43,17 @@ export const startAgenda = async () => {
   // El formato cron es: "minuto hora dia_mes mes dia_semana"
   await agenda.every('0 6,8,10,14,18,22 * * *', 'notificar pendientes', {}, { timezone: 'America/Asuncion' });
   console.log('[Agenda] Tarea "notificar pendientes" programada.');
+
+  // Definir y programar la revisión de pedidos pendientes por expirar
+  agenda.define('verificar pedidos expirados', async () => {
+    try {
+      await checkExpiredPendingOrders();
+    } catch (err) {
+      console.error('[Agenda] Error verificando pedidos pendientes expirados:', err);
+    }
+  });
+  await agenda.every('15 minutes', 'verificar pedidos expirados');
+  console.log('[Agenda] Tarea "verificar pedidos expirados" programada cada 15 min.');
 };
 
 export default agenda;

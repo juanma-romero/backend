@@ -182,14 +182,16 @@ export const triggerOrderAnalysis = async (contactJid, orderSummaryText, action 
       console.log(`[order.service] Pedido detectado. Acción destinada: ${action}...`);
       const newOrder = {
         remoteJid: contactJid,
+        contactName: (await getChatByJid(contactJid)) || 'Desconocido',
         ...analysisResult
       };
 
-      if (action === 'create') {
-        await createOrder(newOrder);
-      } else if (action === 'replace') {
-        await replaceOrder(newOrder);
-      }
+      // En lugar de enviar directo a ERPNext, guardamos en pending_orders
+      // a la espera de la confirmación explícita del cliente (válido por 4 horas)
+      const { savePendingOrder } = await import('./pending_orders.service.js');
+      await savePendingOrder(newOrder, action);
+      await updateChatAnalysis(contactJid, 'Esperando Confirmación del Cliente');
+      console.log(`[order.service] Pedido guardado en pending_orders para ${contactJid}. Esperando respuesta del cliente.`);
 
     } else {
       console.warn("[order.service] El servicio de IA no detectó un pedido formal.");
