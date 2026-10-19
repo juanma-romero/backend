@@ -164,6 +164,22 @@ export const getOrCreateConversation = async (contactId, jid) => {
       return openConv.id;
     }
 
+    // Si no hay abierta pero existe una conversación previa en este inbox, la reabrimos en vez de fragmentar
+    const lastConv = convList.find((c) => c.inbox_id === inboxId);
+    if (lastConv) {
+      try {
+        await axios.post(
+          `${baseUrl}/api/v1/accounts/${accountId}/conversations/${lastConv.id}/toggle_status`,
+          { status: 'open' },
+          { headers: getHeaders(), timeout: 5000 }
+        );
+        console.log(`[chatwoot.service] Conversación #${lastConv.id} reabierta exitosamente.`);
+        return lastConv.id;
+      } catch (reopenErr) {
+        console.warn(`[chatwoot.service] No se pudo reabrir conversación #${lastConv.id}:`, reopenErr.message);
+      }
+    }
+
     // 2. Si no hay conversación abierta, crear una nueva
     const newConvRes = await axios.post(
       `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
@@ -184,13 +200,15 @@ export const getOrCreateConversation = async (contactId, jid) => {
 };
 
 /**
- * Reenvía un mensaje entrante de WhatsApp a Chatwoot para que aparezca en la bandeja.
+ * Reenvía un mensaje de WhatsApp a Chatwoot para que aparezca en la bandeja.
  * @param {Object} params
- * @param {string} params.jid - WhatsApp JID del cliente.
+ * @param {string} params.jid - WhatsApp JID del cliente o destinatario.
  * @param {string} params.name - Nombre del cliente (pushName).
  * @param {string} params.text - Contenido de texto del mensaje.
+ * @param {boolean} [params.fromMe=false] - Indica si el mensaje fue enviado por el administrador.
+ * @param {string} [params.messageId] - ID del mensaje en WhatsApp para rastreo y deduplicación.
  */
-export const forwardIncomingToChatwoot = async ({ jid, name, text }) => {
+export const forwardIncomingToChatwoot = async ({ jid, name, text, fromMe = false, messageId = null }) => {
   const token = process.env.CHATWOOT_API_TOKEN;
   if (!token) {
     // Si no está configurado el token, ignoramos silenciosamente
@@ -208,18 +226,24 @@ export const forwardIncomingToChatwoot = async ({ jid, name, text }) => {
 
     const baseUrl = getBaseUrl();
     const accountId = getAccountId();
+    const isOutgoing = Boolean(fromMe);
 
     await axios.post(
       `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
       {
         content: text,
-        message_type: 'incoming',
+        message_type: isOutgoing ? 'outgoing' : 'incoming',
         private: false,
+        content_attributes: {
+          source: 'dashwhat2',
+          wa_message_id: messageId || null,
+          by: isOutgoing ? 'admin' : 'client',
+        },
       },
       { headers: getHeaders(), timeout: 5000 }
     );
 
-    console.log(`[chatwoot.service] Mensaje entrante de ${jid} publicado en Chatwoot (Conv #${conversationId}).`);
+    console.log(`[chatwoot.service] Mensaje (${isOutgoing ? 'saliente/admin' : 'entrante/cliente'}) de ${jid} publicado en Chatwoot (Conv #${conversationId}).`);
   } catch (error) {
     console.error(`[chatwoot.service] Error al publicar mensaje en Chatwoot:`, error.response?.data || error.message);
   }
