@@ -33,7 +33,7 @@ export async function notifyAdmin(message) {
  * @param {string} jid - El JID del cliente (ej. 595981xxxxxx@s.whatsapp.net).
  * @param {string} message - El texto del mensaje.
  */
-export async function sendClientMessage(jid, message) {
+export async function sendClientMessage(jid, message, options = {}) {
   const dashUrl = process.env.DASHWHAT_URL || 'http://localhost:8880';
   if (!jid) {
     console.warn('[notification.service] No se especificó JID para enviar mensaje al cliente.');
@@ -41,17 +41,20 @@ export async function sendClientMessage(jid, message) {
   }
 
   try {
-    await axios.post(`${dashUrl}/send-message`, { jid, message });
-    console.log(`[notification.service] Mensaje enviado al cliente (${jid}).`);
+    const payload = { jid, message, ...options };
+    await axios.post(`${dashUrl}/send-message`, payload);
+    console.log(`[notification.service] Mensaje/adjunto enviado al cliente (${jid}).`);
 
-    // Espejar automáticamente en Chatwoot como mensaje saliente de la empresa/bot
-    forwardIncomingToChatwoot({
-      jid,
-      text: message,
-      fromMe: true
-    }).catch((cwErr) => {
-      console.warn('[notification.service] Error al espejar mensaje saliente en Chatwoot:', cwErr.message);
-    });
+    // Espejar automáticamente en Chatwoot como mensaje saliente de la empresa/bot (si mirror !== false)
+    if (options.mirror !== false) {
+      forwardIncomingToChatwoot({
+        jid,
+        text: message || (options.mediaUrl ? '[Archivo adjunto]' : ''),
+        fromMe: true
+      }).catch((cwErr) => {
+        console.warn('[notification.service] Error al espejar mensaje saliente en Chatwoot:', cwErr.message);
+      });
+    }
   } catch (err) {
     console.error(`[notification.service] Error al enviar mensaje a cliente ${jid} (¿Servidor Baileys apagado?):`, err.message);
     console.log(`\n=== 📱 SIMULADOR MENSAJE A CLIENTE (${jid}) ===\n${message}\n==============================================\n`);

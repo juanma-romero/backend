@@ -47,18 +47,64 @@ router.post('/webhook', async (req, res) => {
         return res.status(200).json({ status: 'no_target_jid' });
       }
 
-      // Si no tiene texto pero tiene adjuntos
       if (!content && payload.attachments && payload.attachments.length > 0) {
         const att = payload.attachments[0];
-        console.warn(`[Chatwoot Webhook] Mensaje con adjunto (${att.file_type || 'archivo'}) sin texto recibido para ${targetJid}.`);
-        return res.status(200).json({ status: 'attachment_without_text' });
+        const mediaUrl = att.data_url || att.file_url;
+        const mimetype = att.file_type || att.content_type || 'application/octet-stream';
+        const fileName = att.name || 'archivo';
+        console.log(`[Chatwoot Webhook] Mensaje con adjunto sin texto recibido para ${targetJid}: ${mediaUrl}`);
+
+        await sendClientMessage(targetJid, '', {
+          mediaUrl,
+          mimetype,
+          fileName,
+          mirror: false
+        });
+
+        const syntheticMessage = {
+          key: {
+            remoteJid: targetJid,
+            fromMe: true,
+            id: payload.id ? `cw_${payload.id}` : undefined,
+          },
+          pushName: payload.sender?.name || 'Admin Chatwoot',
+          textContent: `[Archivo adjunto: ${fileName}]`,
+          content: `[Archivo adjunto: ${fileName}]`,
+          timestamp: payload.created_at ? new Date(payload.created_at * 1000) : new Date(),
+        };
+
+        try {
+          await saveMessage(syntheticMessage);
+        } catch (saveErr) {
+          console.error('[Chatwoot Webhook] Error guardando mensaje adjunto en DB:', saveErr.message);
+        }
+
+        return res.status(200).json({ status: 'sent_attachment', target: targetJid });
       }
 
       if (content) {
         console.log(`[Chatwoot Webhook] Mensaje saliente de Chatwoot hacia ${targetJid}: "${content.substring(0, 40)}..."`);
         
-        // Enviar a WhatsApp vía Baileys
-        await sendClientMessage(targetJid, content);
+        // Verificar si trae adjunto (PDF, imagen, etc.)
+        let mediaUrl = null;
+        let mimetype = null;
+        let fileName = null;
+        if (payload.attachments && payload.attachments.length > 0) {
+          const att = payload.attachments[0];
+          mediaUrl = att.data_url || att.file_url;
+          mimetype = att.file_type || att.content_type || 'application/octet-stream';
+          fileName = att.name || 'archivo';
+          console.log(`[Chatwoot Webhook] Adjunto detectado para ${targetJid}: ${mediaUrl} (${mimetype})`);
+        }
+
+        // Enviar a WhatsApp vía Baileys (con mirror: false para evitar duplicar la burbuja en Chatwoot,
+        // ya que Chatwoot ya la muestra localmente al escribirla)
+        await sendClientMessage(targetJid, content, {
+          mediaUrl,
+          mimetype,
+          fileName,
+          mirror: false
+        });
 
         // Guardar en Mongo para mantener el historial completo de la conversación
         const syntheticMessage = {
@@ -68,8 +114,8 @@ router.post('/webhook', async (req, res) => {
             id: payload.id ? `cw_${payload.id}` : undefined,
           },
           pushName: payload.sender?.name || 'Admin Chatwoot',
-          textContent: content,
-          content: content,
+          textContent: content || (mediaUrl ? `[Archivo adjunto: ${fileName}]` : ''),
+          content: content || (mediaUrl ? `[Archivo adjunto: ${fileName}]` : ''),
           timestamp: payload.created_at ? new Date(payload.created_at * 1000) : new Date(),
         };
 

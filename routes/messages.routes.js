@@ -84,11 +84,13 @@ router.post('/messages', async (req, res) => {
     // 1. Guardar el mensaje en la DB inmediatamente.
     await saveMessage(messageData);
 
-    // 2. Reenviar el mensaje entrante a Chatwoot de forma asíncrona
+    // 2. Reenviar el mensaje entrante o saliente a Chatwoot de forma asíncrona
     forwardIncomingToChatwoot({
       jid: messageData.key.remoteJid,
       name: messageData.pushName || '',
       text: textContent,
+      fromMe: Boolean(messageData.key.fromMe),
+      messageId: messageData.key.id || null,
     }).catch(err => {
       console.warn('[Router /messages] Error al reenviar a Chatwoot:', err.message);
     });
