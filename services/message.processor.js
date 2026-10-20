@@ -1,6 +1,7 @@
 // services/message.processor.js
 import { handleOrderTrigger } from './message_events/order.handler.js';
 import { handlePaymentTrigger } from './message_events/payment.handler.js';
+import { handleDeliveryTrigger } from './message_events/delivery.handler.js';
 import { handleConversationAnalysis } from './message_events/analysis.handler.js';
 import { handleClientResponseForPendingOrder } from './pending_orders.service.js';
 
@@ -27,6 +28,12 @@ export const processMessage = async (messageData) => {
   // 1.5. Intentar manejar el evento de acreditación de pago ("Acreditado ...")
   const paymentHandled = await handlePaymentTrigger(messageData);
   if (paymentHandled) {
+    return;
+  }
+
+  // 1.6. Intentar manejar los gatillos de entrega ("Pedido en camino" / "Pedido entregado")
+  const deliveryHandled = await handleDeliveryTrigger(messageData);
+  if (deliveryHandled) {
     return;
   }
 
