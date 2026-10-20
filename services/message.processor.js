@@ -1,5 +1,6 @@
 // services/message.processor.js
 import { handleOrderTrigger } from './message_events/order.handler.js';
+import { handlePaymentTrigger } from './message_events/payment.handler.js';
 import { handleConversationAnalysis } from './message_events/analysis.handler.js';
 import { handleClientResponseForPendingOrder } from './pending_orders.service.js';
 
@@ -18,9 +19,14 @@ export const processMessage = async (messageData) => {
   }
 
   // 1. Intentar manejar el evento de agendar pedido primero.
-  // La función handleOrderTrigger devuelve `true` si se encargó del mensaje.
   const orderHandled = await handleOrderTrigger(messageData, pendingAnalysisTimers);
   if (orderHandled) {
+    return;
+  }
+
+  // 1.5. Intentar manejar el evento de acreditación de pago ("Acreditado ...")
+  const paymentHandled = await handlePaymentTrigger(messageData);
+  if (paymentHandled) {
     return;
   }
 
