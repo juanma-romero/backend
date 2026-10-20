@@ -1,8 +1,22 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { forwardIncomingToChatwoot } from './chatwoot.service.js';
+import { forwardIncomingToChatwoot, postAdminNoteToChatwoot } from './chatwoot.service.js';
 
 dotenv.config();
+
+/**
+ * Notifica al admin SIN molestar al cliente: publica una nota privada en la
+ * conversación de Chatwoot del cliente. Si Chatwoot no responde, cae en el DM
+ * de WhatsApp al admin (notifyAdmin). Nunca envía nada al chat del cliente.
+ * @param {string} clientJid - JID del cliente dueño de la conversación.
+ * @param {string} message - Texto de la alerta.
+ */
+export async function alertAdminOnly(clientJid, message) {
+  const noted = await postAdminNoteToChatwoot(clientJid, `🔒 Admin: ${message}`).catch(() => false);
+  if (!noted) {
+    await notifyAdmin(message);
+  }
+}
 
 /**
  * Envía una notificación proactiva al número de admin en WhatsApp.

@@ -1,6 +1,6 @@
 // services/message_events/delivery.handler.js
 import axios from 'axios';
-import { sendClientMessage } from '../notification.service.js';
+import { sendClientMessage, alertAdminOnly } from '../notification.service.js';
 
 /**
  * Maneja los gatillos de entrega de pedido escritos por el admin en el chat con el cliente:
@@ -46,14 +46,17 @@ export const handleDeliveryTrigger = async (messageData) => {
         reply = `✅ Pedido entregado y registrado en sistema${orderId}.${remito}`;
       }
       console.log(`[DeliveryHandler] ${reply}`);
-      await sendClientMessage(contactJid, reply, { mirror: false });
+      // Confirmación visible para el cliente Y espejada al panel (mirror por defecto)
+      await sendClientMessage(contactJid, reply);
     } else {
-      await sendClientMessage(contactJid, `❌ No se pudo registrar la entrega del pedido en el ERP.`, { mirror: false });
+      // Fallo (ej. pedido ya entregado, sin pedidos activos): SOLO al admin, nada al cliente
+      await alertAdminOnly(contactJid, `⚠️ Gatillo "${textContent}" no se pudo registrar en el ERP: el pedido ya estaría entregado o no hay pedido activo.`);
     }
   } catch (error) {
     console.error(`[DeliveryHandler] Error registrando entrega para ${contactJid}:`, error.response?.data || error.message);
     const errDetail = error.response?.data?.detail || error.message;
-    await sendClientMessage(contactJid, `❌ Error al registrar la entrega en ERP: ${errDetail}`, { mirror: false });
+    // Error del ERP: SOLO al admin (nota privada), el cliente no ve nada
+    await alertAdminOnly(contactJid, `⚠️ Gatillo "${textContent}" no registrado en ERP: ${errDetail}`);
   }
 
   return true;

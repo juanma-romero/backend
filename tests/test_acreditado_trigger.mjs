@@ -1,13 +1,15 @@
 // tests/test_acreditado_trigger.mjs
-// Test local del gatillo "Acreditado xxx gs": payment.handler.js -> ERP (dummy) -> dashWhat2 (dummy)
+// Test local del gatillo "Acreditado xxx gs": payment.handler.js -> ERP (dummy) -> dashWhat2/Chatwoot (dummies)
+// Política: éxito -> mensaje al cliente + espejo al panel; error/monto ilegible -> SOLO nota privada.
 import assert from 'assert';
 import http from 'http';
 import { handlePaymentTrigger } from '../services/message_events/payment.handler.js';
 
 const capturedErp = [];   // requests al erp-service
-const capturedDash = [];  // mensajes que el handler mandó al chat (vía dashWhat2)
+const capturedDash = [];  // mensajes enviados al WhatsApp del CLIENTE
+const capturedCw = [];    // publicaciones en Chatwoot (notas privadas / mirror)
 
-// Servidor dummy: hace de erp-service (/api/orders/.../pay) y de dashWhat2 (/send-message)
+// Servidor dummy: hace de erp-service, dashWhat2 y Chatwoot
 const server = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
@@ -15,7 +17,7 @@ const server = http.createServer((req, res) => {
     if (req.url.startsWith('/api/orders/')) {
       capturedErp.push({ url: req.url, body: body ? JSON.parse(body) : null });
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      // Simula el response nuevo con outstanding_amount: último pedido = pago total (0)
+      // Simula el response con outstanding_amount: 4ta llamada = pago total (0)
       const isTotal = capturedErp.length >= 4;
       return res.end(JSON.stringify({
         success: true,
@@ -30,14 +32,25 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: true }));
     }
-    if (req.url === '/fail-pay') {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ detail: 'Pedido no encontrado' }));
+    if (req.url.includes('/contacts/search')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ payload: [{ id: 99 }] }));
+    }
+    if (req.url.includes('/conversations') && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ payload: [{ id: 123, inbox_id: 7, status: 'open' }] }));
+    }
+    if (req.url.includes('/conversations/') && req.url.endsWith('/messages')) {
+      capturedCw.push(body ? JSON.parse(body) : {});
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ id: 5001 }));
     }
     res.writeHead(404);
     res.end();
   });
 });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const msg = (text, fromMe = true, jid = '267912107524268@lid') => ({
   key: { remoteJid: jid, fromMe },
@@ -47,6 +60,10 @@ const msg = (text, fromMe = true, jid = '267912107524268@lid') => ({
 server.listen(8097, async () => {
   process.env.ERP_SERVICE_URL = 'http://localhost:8097';
   process.env.DASHWHAT_URL = 'http://localhost:8097';
+  process.env.CHATWOOT_API_TOKEN = 'test-token';
+  process.env.CHATWOOT_URL = 'http://localhost:8097';
+  process.env.CHATWOOT_INBOX_ID = '7';
+  delete process.env.ADMIN_NOTIFY_JID; // no usar DM admin en tests
 
   try {
     // Caso 0: mensaje que NO es gatillo -> devuelve false y no llama a nadie
@@ -72,28 +89,43 @@ server.listen(8097, async () => {
     assert.ok(capturedDash[0].message.includes('PAY-TEST-0001'));
     console.log('✓ Caso 1 OK: parcial con monto -> "Pago registrado" + saldo pendiente');
 
-    // Caso 2: "Acreditado 50 mil" -> 50000
+    // Caso 2: confirmación exitosa TAMBIÉN se espeja al panel (outgoing, no privada)
+    await sleep(250); // el mirror es async
+    const mirror = capturedCw.find((m) => m.message_type === 'outgoing' && m.private === false);
+    assert.ok(mirror, 'la confirmación debía espejarse en Chatwoot');
+    assert.ok(mirror.content.includes('Pago registrado'));
+    console.log('✓ Caso 2 OK: confirmación espejada al panel (outgoing no privada)');
+
+    // Caso 3: "Acreditado 50 mil" -> 50000
     handled = await handlePaymentTrigger(msg('Acreditado 50 mil'));
     assert.strictEqual(capturedErp[1].body.amount, 50000);
-    console.log('✓ Caso 2 OK: formato "50 mil"');
+    console.log('✓ Caso 3 OK: formato "50 mil"');
 
-    // Caso 3: "Acreditado 1.500.000" -> 1500000
+    // Caso 4: "Acreditado 1.500.000" -> 1500000
     handled = await handlePaymentTrigger(msg('Acreditado 1.500.000 gs'));
     assert.strictEqual(capturedErp[2].body.amount, 1500000);
-    console.log('✓ Caso 3 OK: formato con puntos de mil');
+    console.log('✓ Caso 4 OK: formato con puntos de mil');
 
-    // Caso 4: pago total (outstanding 0) -> "totalmente pagado"
+    // Caso 5: pago total (outstanding 0) -> "totalmente pagado"
     handled = await handlePaymentTrigger(msg('Acreditado 100000'));
+    await sleep(150);
     assert.ok(capturedDash[3].message.includes('Pedido totalmente pagado en sistema'), capturedDash[3].message);
-    console.log('✓ Caso 4 OK: pago total -> "totalmente pagado"');
+    console.log('✓ Caso 5 OK: pago total -> "totalmente pagado"');
 
-    // Caso 5: sin monto reconocible -> avisa al admin, no llama al ERP
+    // Caso 6: sin monto reconocible -> SOLO nota privada, nada al cliente, no llama al ERP
+    const dashBefore = capturedDash.length;
     const erpBefore = capturedErp.length;
+    await sleep(200); // drenar mirrors pendientes
+    const cwBefore = capturedCw.length;
     handled = await handlePaymentTrigger(msg('Acreditado'));
+    await sleep(250);
     assert.strictEqual(handled, true);
-    assert.strictEqual(capturedErp.length, erpBefore);
-    assert.ok(capturedDash[4].message.includes('No pude reconocer el monto'));
-    console.log('✓ Caso 5 OK: sin monto -> aviso, sin llamada al ERP');
+    assert.strictEqual(capturedErp.length, erpBefore, 'no debía llamar al ERP');
+    assert.strictEqual(capturedDash.length, dashBefore, 'no debía salir mensaje al WhatsApp del cliente');
+    const nota = capturedCw.slice(cwBefore).find((m) => m.private === true);
+    assert.ok(nota, 'debía publicarse una nota privada en Chatwoot');
+    assert.ok(nota.content.includes('No reconocí el monto'), nota.content);
+    console.log('✓ Caso 6 OK: sin monto -> nota privada al admin, silencio en el chat del cliente');
 
     console.log('\nTODOS LOS CASOS PASARON');
   } catch (e) {

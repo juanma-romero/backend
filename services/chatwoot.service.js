@@ -248,3 +248,46 @@ export const forwardIncomingToChatwoot = async ({ jid, name, text, fromMe = fals
     console.error(`[chatwoot.service] Error al publicar mensaje en Chatwoot:`, error.response?.data || error.message);
   }
 };
+
+/**
+ * Publica una nota PRIVADA (visible solo para agentes/admin) en la conversación
+ * del cliente en Chatwoot. No genera eco hacia WhatsApp porque el webhook ignora
+ * los mensajes `private: true`.
+ * @param {string} jid - JID del cliente cuya conversación debe recibir la nota.
+ * @param {string} text - Contenido de la nota.
+ * @returns {Promise<boolean>} true si la nota se publicó.
+ */
+export const postAdminNoteToChatwoot = async (jid, text) => {
+  const token = process.env.CHATWOOT_API_TOKEN;
+  if (!token || !jid || !text) return false;
+
+  try {
+    const contactId = await getOrCreateContact(jid, null);
+    if (!contactId) return false;
+
+    const conversationId = await getOrCreateConversation(contactId, jid);
+    if (!conversationId) return false;
+
+    const baseUrl = getBaseUrl();
+    const accountId = getAccountId();
+
+    await axios.post(
+      `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+      {
+        content: text,
+        private: true,
+        content_attributes: {
+          source: 'backend_internal',
+          by: 'system',
+        },
+      },
+      { headers: getHeaders(), timeout: 5000 }
+    );
+
+    console.log(`[chatwoot.service] Nota privada para el admin publicada en Conv #${conversationId}.`);
+    return true;
+  } catch (error) {
+    console.error(`[chatwoot.service] Error al publicar nota privada en Chatwoot:`, error.response?.data || error.message);
+    return false;
+  }
+};

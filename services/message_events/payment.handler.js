@@ -1,6 +1,6 @@
 // services/message_events/payment.handler.js
 import axios from 'axios';
-import { sendClientMessage } from '../notification.service.js';
+import { sendClientMessage, alertAdminOnly } from '../notification.service.js';
 
 /**
  * Maneja la detección del comando de pago por transferencia: "Acreditado xxx gs" o "Acreditado [monto]"
@@ -35,7 +35,8 @@ export const handlePaymentTrigger = async (messageData) => {
     }
 
     if (amount <= 0) {
-      await sendClientMessage(contactJid, `❌ No pude reconocer el monto en el mensaje de acreditación. Formato esperado: "Acreditado 150000 gs" o "Acreditado 50 mil"`, { mirror: false });
+      // Error de tipeo del admin: solo nota privada, el cliente no ve nada
+      await alertAdminOnly(contactJid, `⚠️ No reconocí el monto en "${textContent}". Formato: "Acreditado 150000 gs" o "Acreditado 50 mil".`);
       return true;
     }
 
@@ -64,14 +65,17 @@ export const handlePaymentTrigger = async (messageData) => {
         }
 
         console.log(`[PaymentHandler] Pago registrado con éxito: ${replyText}`);
-        await sendClientMessage(contactJid, replyText, { mirror: false });
+        // Confirmación visible para el cliente Y espejada al panel (mirror por defecto)
+        await sendClientMessage(contactJid, replyText);
       } else {
-        await sendClientMessage(contactJid, `❌ No se pudo registrar el pago en el sistema ERP.`, { mirror: false });
+        // Fallo (ej. pedido ya pagado): SOLO al admin, nada al cliente
+        await alertAdminOnly(contactJid, `⚠️ Gatillo "${textContent}" no se pudo registrar en el ERP: el pago ya estaría registrado o el pedido no está facturable.`);
       }
     } catch (error) {
       console.error(`[PaymentHandler] Error registrando pago para ${contactJid}:`, error.response?.data || error.message);
       const errDetail = error.response?.data?.detail || error.message;
-      await sendClientMessage(contactJid, `❌ Error al registrar pago en ERP: ${errDetail}`, { mirror: false });
+      // Error del ERP: SOLO al admin (nota privada), el cliente no ve nada
+      await alertAdminOnly(contactJid, `⚠️ Gatillo "${textContent}" no registrado en ERP: ${errDetail}`);
     }
 
     return true;
