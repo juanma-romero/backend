@@ -1,13 +1,13 @@
 // tests/test_acreditado_trigger.mjs
 // Test local del gatillo "Acreditado xxx gs": payment.handler.js -> ERP (dummy) -> dashWhat2/Chatwoot (dummies)
-// Política: éxito -> mensaje al cliente + espejo al panel; error/monto ilegible -> SOLO nota privada.
+// Política: éxito Y error/monto ilegible -> SOLO nota privada al admin; nada al cliente.
 import assert from 'assert';
 import http from 'http';
 import { handlePaymentTrigger } from '../services/message_events/payment.handler.js';
 
 const capturedErp = [];   // requests al erp-service
 const capturedDash = [];  // mensajes enviados al WhatsApp del CLIENTE
-const capturedCw = [];    // publicaciones en Chatwoot (notas privadas / mirror)
+const capturedCw = [];    // publicaciones en Chatwoot
 
 // Servidor dummy: hace de erp-service, dashWhat2 y Chatwoot
 const server = http.createServer((req, res) => {
@@ -51,6 +51,7 @@ const server = http.createServer((req, res) => {
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const lastNote = () => [...capturedCw].reverse().find((m) => m.private === true);
 
 const msg = (text, fromMe = true, jid = '267912107524268@lid') => ({
   key: { remoteJid: jid, fromMe },
@@ -72,60 +73,57 @@ server.listen(8097, async () => {
     assert.strictEqual(capturedErp.length, 0);
     console.log('✓ Caso 0 OK: mensaje normal no dispara el gatillo');
 
-    // Caso 0b: mensaje del CLIENTE que menciona 'acreditado' -> no debe disparar (es fromMe=false)
+    // Caso 0b: mensaje del CLIENTE que menciona 'acreditado' -> no dispara (fromMe=false)
     handled = await handlePaymentTrigger(msg('ya te acreditado 50 mil', false));
     assert.strictEqual(handled, false);
     assert.strictEqual(capturedErp.length, 0);
     console.log('✓ Caso 0b OK: solo responde al admin (fromMe)');
 
-    // Caso 1: "Acreditado 150000 gs" (pago parcial -> espera aviso de saldo)
+    // Caso 1: parcial -> nota privada con saldo pendiente
     handled = await handlePaymentTrigger(msg('Acreditado 150000 gs'));
+    await sleep(200);
     assert.strictEqual(handled, true);
     assert.strictEqual(capturedErp[0].url, '/api/orders/267912107524268@lid/pay');
     assert.strictEqual(capturedErp[0].body.amount, 150000);
     assert.strictEqual(capturedErp[0].body.method, 'transferencia');
-    assert.ok(capturedDash[0].message.includes('Pago registrado en sistema por Gs. 150.000'));
-    assert.ok(capturedDash[0].message.includes('saldo pendiente de Gs. 100.000'));
-    assert.ok(capturedDash[0].message.includes('PAY-TEST-0001'));
-    console.log('✓ Caso 1 OK: parcial con monto -> "Pago registrado" + saldo pendiente');
+    let nota = lastNote();
+    assert.ok(nota, 'debía publicarse una nota privada');
+    assert.ok(nota.content.includes('Pago registrado en sistema por Gs. 150.000'), nota.content);
+    assert.ok(nota.content.includes('saldo pendiente de Gs. 100.000'), nota.content);
+    assert.ok(nota.content.includes('PAY-TEST-0001'), nota.content);
+    console.log('✓ Caso 1 OK: parcial -> nota privada "Pago registrado" + saldo pendiente');
 
-    // Caso 2: confirmación exitosa TAMBIÉN se espeja al panel (outgoing, no privada)
-    await sleep(250); // el mirror es async
-    const mirror = capturedCw.find((m) => m.message_type === 'outgoing' && m.private === false);
-    assert.ok(mirror, 'la confirmación debía espejarse en Chatwoot');
-    assert.ok(mirror.content.includes('Pago registrado'));
-    console.log('✓ Caso 2 OK: confirmación espejada al panel (outgoing no privada)');
-
-    // Caso 3: "Acreditado 50 mil" -> 50000
-    handled = await handlePaymentTrigger(msg('Acreditado 50 mil'));
+    // Caso 2: "Acreditado 50 mil" -> 50000
+    await handlePaymentTrigger(msg('Acreditado 50 mil'));
     assert.strictEqual(capturedErp[1].body.amount, 50000);
-    console.log('✓ Caso 3 OK: formato "50 mil"');
+    console.log('✓ Caso 2 OK: formato "50 mil"');
 
-    // Caso 4: "Acreditado 1.500.000" -> 1500000
-    handled = await handlePaymentTrigger(msg('Acreditado 1.500.000 gs'));
+    // Caso 3: "Acreditado 1.500.000" -> 1500000
+    await handlePaymentTrigger(msg('Acreditado 1.500.000 gs'));
     assert.strictEqual(capturedErp[2].body.amount, 1500000);
-    console.log('✓ Caso 4 OK: formato con puntos de mil');
+    console.log('✓ Caso 3 OK: formato con puntos de mil');
 
-    // Caso 5: pago total (outstanding 0) -> "totalmente pagado"
-    handled = await handlePaymentTrigger(msg('Acreditado 100000'));
-    await sleep(150);
-    assert.ok(capturedDash[3].message.includes('Pedido totalmente pagado en sistema'), capturedDash[3].message);
-    console.log('✓ Caso 5 OK: pago total -> "totalmente pagado"');
+    // Caso 4: pago total (outstanding 0) -> "totalmente pagado" en nota privada
+    await handlePaymentTrigger(msg('Acreditado 100000'));
+    await sleep(200);
+    nota = lastNote();
+    assert.ok(nota.content.includes('Pedido totalmente pagado en sistema'), nota.content);
+    console.log('✓ Caso 4 OK: pago total -> nota privada "totalmente pagado"');
 
-    // Caso 6: sin monto reconocible -> SOLO nota privada, nada al cliente, no llama al ERP
-    const dashBefore = capturedDash.length;
+    // Caso 5: sin monto reconocible -> nota privada, no llama al ERP
     const erpBefore = capturedErp.length;
-    await sleep(200); // drenar mirrors pendientes
-    const cwBefore = capturedCw.length;
     handled = await handlePaymentTrigger(msg('Acreditado'));
-    await sleep(250);
+    await sleep(200);
     assert.strictEqual(handled, true);
     assert.strictEqual(capturedErp.length, erpBefore, 'no debía llamar al ERP');
-    assert.strictEqual(capturedDash.length, dashBefore, 'no debía salir mensaje al WhatsApp del cliente');
-    const nota = capturedCw.slice(cwBefore).find((m) => m.private === true);
-    assert.ok(nota, 'debía publicarse una nota privada en Chatwoot');
+    nota = lastNote();
     assert.ok(nota.content.includes('No reconocí el monto'), nota.content);
-    console.log('✓ Caso 6 OK: sin monto -> nota privada al admin, silencio en el chat del cliente');
+    console.log('✓ Caso 5 OK: sin monto -> nota privada, no llama al ERP');
+
+    // Caso 6: en todo el test, cero mensajes al cliente
+    assert.strictEqual(capturedDash.length, 0, JSON.stringify(capturedDash));
+    assert.ok(capturedCw.every((m) => m.private === true), JSON.stringify(capturedCw));
+    console.log('✓ Caso 6 OK: cero mensajes al cliente (ni WhatsApp ni salientes en Chatwoot)');
 
     console.log('\nTODOS LOS CASOS PASARON');
   } catch (e) {

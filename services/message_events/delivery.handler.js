@@ -1,6 +1,6 @@
 // services/message_events/delivery.handler.js
 import axios from 'axios';
-import { sendClientMessage, alertAdminOnly } from '../notification.service.js';
+import { alertAdminOnly } from '../notification.service.js';
 
 /**
  * Maneja los gatillos de entrega de pedido escritos por el admin en el chat con el cliente:
@@ -46,8 +46,8 @@ export const handleDeliveryTrigger = async (messageData) => {
         reply = `✅ Pedido entregado y registrado en sistema${orderId}.${remito}`;
       }
       console.log(`[DeliveryHandler] ${reply}`);
-      // Confirmación visible para el cliente Y espejada al panel (mirror por defecto)
-      await sendClientMessage(contactJid, reply);
+      // Confirmación SOLO para el admin (nota privada): al cliente le basta el mensaje del admin
+      await alertAdminOnly(contactJid, reply);
     } else {
       // Fallo (ej. pedido ya entregado, sin pedidos activos): SOLO al admin, nada al cliente
       await alertAdminOnly(contactJid, `⚠️ Gatillo "${textContent}" no se pudo registrar en el ERP: el pedido ya estaría entregado o no hay pedido activo.`);

@@ -1,6 +1,6 @@
 // services/message_events/payment.handler.js
 import axios from 'axios';
-import { sendClientMessage, alertAdminOnly } from '../notification.service.js';
+import { alertAdminOnly } from '../notification.service.js';
 
 /**
  * Maneja la detección del comando de pago por transferencia: "Acreditado xxx gs" o "Acreditado [monto]"
@@ -65,8 +65,8 @@ export const handlePaymentTrigger = async (messageData) => {
         }
 
         console.log(`[PaymentHandler] Pago registrado con éxito: ${replyText}`);
-        // Confirmación visible para el cliente Y espejada al panel (mirror por defecto)
-        await sendClientMessage(contactJid, replyText);
+        // Confirmación SOLO para el admin (nota privada): al cliente le basta el mensaje del admin
+        await alertAdminOnly(contactJid, replyText);
       } else {
         // Fallo (ej. pedido ya pagado): SOLO al admin, nada al cliente
         await alertAdminOnly(contactJid, `⚠️ Gatillo "${textContent}" no se pudo registrar en el ERP: el pago ya estaría registrado o el pedido no está facturable.`);

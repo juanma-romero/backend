@@ -3,8 +3,7 @@
 // delivery.handler.js -> dummy ERP (/api/orders/<jid>/deliver)
 //                      -> dummy dashWhat2 (/send-message) = WhatsApp del CLIENTE
 //                      -> dummy Chatwoot (POST .../messages) = panel del admin
-// Política probada: éxito -> mensaje al cliente + espejo en panel;
-//                     error -> SOLO nota privada en el panel, nada al cliente.
+// Política probada: éxito Y error -> SOLO nota privada en el panel; nada al cliente.
 import assert from 'assert';
 import http from 'http';
 import { handleDeliveryTrigger } from '../services/message_events/delivery.handler.js';
@@ -25,6 +24,7 @@ const check = async (label, fn) => {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const notesSince = (idx) => capturedCw.slice(idx).filter((m) => m.private === true);
 
 // Un servidor dummy hace de ERP, dashWhat2 y Chatwoot
 const server = http.createServer((req, res) => {
@@ -95,56 +95,57 @@ server.listen(8096, async () => {
       assert.strictEqual(handled, false);
     });
 
-    // Caso 1: "Pedido en camino" -> deliver con el JID + confirmación con ID y remito
+    // Caso 1: "Pedido en camino" -> deliver + confirmación como nota privada
+    let cw = capturedCw.length;
     await handleDeliveryTrigger(msg('Pedido en camino'));
-    await sleep(250); // el mirror a Chatwoot es async
-    await check('Caso 1: "Pedido en camino" -> deliver(JID) + confirmación con remito', () => {
+    await sleep(250);
+    await check('Caso 1: "Pedido en camino" -> deliver(JID) + nota privada con ID y remito', () => {
       assert.strictEqual(capturedErp[0].url, '/api/orders/267912107524268@lid/deliver');
       assert.strictEqual(capturedErp[0].method, 'POST');
-      assert.ok(capturedDash[0].message.includes('pedido en camino'), capturedDash[0].message);
-      assert.ok(capturedDash[0].message.includes('SAL-ORD-2026-TEST'), capturedDash[0].message);
-      assert.ok(capturedDash[0].message.includes('MAT-DEC-2026-TEST'), capturedDash[0].message);
+      const nota = notesSince(cw)[0];
+      assert.ok(nota, JSON.stringify(capturedCw));
+      assert.ok(nota.content.includes('pedido en camino'), nota.content);
+      assert.ok(nota.content.includes('SAL-ORD-2026-TEST'), nota.content);
+      assert.ok(nota.content.includes('MAT-DEC-2026-TEST'), nota.content);
     });
 
-    // Caso 2: la confirmación ALSO se espeja al panel como outgoing (no privada)
-    await check('Caso 2: confirmación espejada en el panel (outgoing, no privada)', () => {
-      const mirror = capturedCw.find((m) => m.message_type === 'outgoing' && m.private === false);
-      assert.ok(mirror, JSON.stringify(capturedCw));
-      assert.ok(mirror.content.includes('pedido en camino'), mirror.content);
-    });
-
-    // Caso 3: "Pedido entregado" -> registra entrega
+    // Caso 2: "Pedido entregado" -> nota privada
+    cw = capturedCw.length;
     await handleDeliveryTrigger(msg('Pedido entregado'));
     await sleep(250);
-    await check('Caso 3: "Pedido entregado" -> deliver + confirmación', () => {
+    await check('Caso 2: "Pedido entregado" -> deliver + nota privada', () => {
       assert.strictEqual(capturedErp[1].url, '/api/orders/267912107524268@lid/deliver');
-      assert.ok(capturedDash[1].message.includes('Pedido entregado y registrado'), capturedDash[1].message);
+      const nota = notesSince(cw)[0];
+      assert.ok(nota && nota.content.includes('Pedido entregado y registrado'), JSON.stringify(nota));
     });
 
-    // Caso 4: variantes con mayúsculas/sufijos
+    // Caso 3: variantes con mayúsculas/sufijos
     await handleDeliveryTrigger(msg('PEDIDO EN CAMINO 🚚 salimos'));
     await sleep(150);
-    await check('Caso 4: insensible a mayúsculas y sufijos', () => {
+    await check('Caso 3: insensible a mayúsculas y sufijos', () => {
       assert.strictEqual(capturedErp.length, 3);
     });
 
-    // Caso 5: "entregado" suelto NO dispara
-    await check('Caso 5: "entregado" suelto no dispara', async () => {
+    // Caso 4: "entregado" suelto NO dispara
+    await check('Caso 4: "entregado" suelto no dispara', async () => {
       const handled = await handleDeliveryTrigger(msg('ya esta entregado'));
       assert.strictEqual(handled, false);
     });
 
-    // Caso 6: error del ERP (ej. pedido ya entregado) -> SOLO nota privada; nada al cliente
-    const dashBefore = capturedDash.length;
-    await sleep(200); // drenar mirrors pendientes
-    const cwBefore = capturedCw.length;
+    // Caso 5: error del ERP (ej. pedido ya entregado) -> nota privada
+    cw = capturedCw.length;
     await handleDeliveryTrigger(msg('Pedido entregado', true, 'fail@lid'));
     await sleep(250);
-    await check('Caso 6: error del ERP -> nota privada al admin y silencio en el WhatsApp del cliente', () => {
-      assert.strictEqual(capturedDash.length, dashBefore, 'no debía salir ningún mensaje al WhatsApp del cliente');
-      const nota = capturedCw.slice(cwBefore).find((m) => m.private === true);
+    await check('Caso 5: error del ERP -> nota privada al admin', () => {
+      const nota = notesSince(cw)[0];
       assert.ok(nota, 'debía publicarse la nota privada en Chatwoot');
       assert.ok(nota.content.includes('no tiene pedidos activos'), nota.content);
+    });
+
+    // Caso 6: en TODO el test no salió nada al cliente (ni WhatsApp ni salientes en Chatwoot)
+    await check('Caso 6: cero mensajes al cliente (ni WhatsApp ni salientes en Chatwoot)', () => {
+      assert.strictEqual(capturedDash.length, 0, JSON.stringify(capturedDash));
+      assert.ok(capturedCw.every((m) => m.private === true), JSON.stringify(capturedCw));
     });
 
     if (failed) { process.exitCode = 1; }
