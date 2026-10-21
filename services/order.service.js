@@ -11,6 +11,7 @@ const CATALOG_NAMES = {
   empaPollo: 'Empanadita de Pollo',
   milaPollo: 'Milanesa de Pollo',
   pizeta: 'Pizeta',
+  'pizeta-final': 'Pizeta',
   mini: 'Mini Burger',
   empaCarne: 'Empanadita de Carne',
   sandwPollo: 'Sandwich de Mila de Pollo',
